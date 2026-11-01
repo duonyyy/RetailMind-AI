@@ -14,6 +14,12 @@ export class InventoryController {
     return this.inventoryService.getStores();
   }
 
+  @Roles('ADMIN')
+  @Get('matrix')
+  async getInventoryMatrix() {
+    return this.inventoryService.getInventoryMatrix();
+  }
+
   @Public()
   @Get('stock')
   async getStock(

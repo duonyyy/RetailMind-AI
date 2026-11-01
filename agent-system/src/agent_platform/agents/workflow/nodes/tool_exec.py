@@ -14,7 +14,7 @@ def create_tool_exec_node(executor: ToolExecutor):
         if not pending_calls:
             return {}
 
-        if len(pending_calls) > 1 and any(
+        if len(pending_calls) > 1 and getattr(executor, "registry", None) and any(
             executor.registry.get(call.get("name", "")) and executor.registry.get(call.get("name", "")).side_effect
             for call in pending_calls
         ):
@@ -40,6 +40,12 @@ def create_tool_exec_node(executor: ToolExecutor):
             args = tc.get("arguments", {})
             call_id = tc.get("id", f"call_{len(tool_messages)}")
 
+            registry = getattr(executor, "registry", None)
+            spec = registry.get(tool_name) if registry else None
+            if state.get("require_operation_id") and spec and spec.side_effect and not state.get("operation_id"):
+                unavailable_message = "Không thể thực hiện thao tác vì thiếu mã yêu cầu. Vui lòng gửi lại từ giao diện hỗ trợ mã thao tác."
+                break
+
             result = await executor.execute(
                 tool_name=tool_name,
                 arguments=args,
@@ -47,6 +53,7 @@ def create_tool_exec_node(executor: ToolExecutor):
                 thread_id=thread_id,
                 call_id=call_id,
                 run_id=run_id,
+                operation_id=state.get("operation_id"),
             )
 
             duration_ms = (time.time() - t_start) * 1000
@@ -88,14 +95,18 @@ def create_tool_exec_node(executor: ToolExecutor):
             if awaiting_approval:
                 break
 
-            spec = executor.registry.get(tool_name)
+            if result.error_code == "sensitive_input_unavailable":
+                unavailable_message = masked_output_str
+                break
+
+            spec = registry.get(tool_name) if registry else None
             if result.is_error and spec and spec.side_effect:
                 unknown_outcome = result.error_code in ("unknown_outcome", "idempotency_in_progress")
                 unavailable_message = ("Chưa xác định được kết quả thao tác; cần đối soát trước khi thử lại."
                                        if unknown_outcome else "Thao tác thất bại hoặc chưa được gửi; chưa có thay đổi được xác nhận.")
                 break
 
-            if result.error_code in ("unavailable", "timeout", "unknown_outcome", "idempotency_in_progress", "sensitive_input_unavailable"):
+            if result.error_code in ("unavailable", "timeout", "unknown_outcome", "idempotency_in_progress"):
                 unavailable_message = masked_output_str
                 unknown_outcome = result.error_code == "unknown_outcome"
                 break

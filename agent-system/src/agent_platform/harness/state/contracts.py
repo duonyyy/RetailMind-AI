@@ -30,6 +30,8 @@ class AgentState(TypedDict):
     # Immutable session context attached at API gateway
     thread_id: str
     run_id: str
+    operation_id: Optional[str]
+    require_operation_id: bool
     principal: Principal
     domain: str
     prompt_version: str

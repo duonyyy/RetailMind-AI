@@ -1,7 +1,7 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, UUID4
 from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.api.deps import get_optional_principal, owned_thread
@@ -13,6 +13,7 @@ router = APIRouter(prefix="/v1", tags=["Chat"])
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     thread_id: Optional[str] = Field(default=None, max_length=128)
+    operation_id: Optional[UUID4] = None
 
 class ChatResponse(BaseModel):
     thread_id: str
@@ -37,6 +38,7 @@ async def chat_endpoint(
             query=req.query,
             principal=principal,
             thread_id=thread_id,
+            **({"operation_id": str(req.operation_id)} if req.operation_id else {}),
         )
     except PermissionError:
         raise HTTPException(status_code=404, detail="Chat session not found.")
@@ -76,6 +78,7 @@ async def chat_stream_endpoint(
                 query=req.query,
                 principal=principal,
                 thread_id=thread_id,
+                **({"operation_id": str(req.operation_id)} if req.operation_id else {}),
             )
         except PersistenceError:
             yield format_sse_event(

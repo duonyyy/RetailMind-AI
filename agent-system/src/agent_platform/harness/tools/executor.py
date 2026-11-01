@@ -89,6 +89,7 @@ class ToolExecutor:
         thread_id: str = "default_thread",
         call_id: str = "default_call",
         run_id: str = "default_run",
+        operation_id: Optional[str] = None,
     ) -> ToolExecutionResult:
         # Step 1: Tra registry
         tool_spec = self.registry.get(tool_name)
@@ -174,6 +175,16 @@ class ToolExecutor:
         # Step 6: Idempotency Key Gate (Atomic reservation & payload check for side-effect tools)
         idem_key = self.idempotency.generate_key(thread_id, call_id)
         backend_idempotency_key = str(uuid.uuid4()) if tool_spec.side_effect else idem_key
+        if tool_spec.side_effect and operation_id is not None:
+            try:
+                parsed = uuid.UUID(operation_id)
+                if parsed.version != 4 or str(parsed) != operation_id.lower():
+                    raise ValueError("invalid operation id")
+            except (ValueError, AttributeError, TypeError):
+                return ToolExecutionResult(output="Mã thao tác không hợp lệ.", is_error=True, error_code="validation_error")
+            backend_idempotency_key = str(parsed)
+            identity = json.dumps([principal.tenant_id, principal.user_id], ensure_ascii=False, separators=(",", ":"))
+            idem_key = self.idempotency.generate_key(identity, backend_idempotency_key)
         if tool_spec.side_effect:
             if hasattr(self.idempotency, "begin_execution"):
                 reservation = self.idempotency.begin_execution(
@@ -187,6 +198,11 @@ class ToolExecutor:
                     backend_idempotency_key=backend_idempotency_key,
                 )
                 if reservation.action == "replay":
+                    # Masked fingerprints can collide for different private values.
+                    # Do not claim a replay matches if any argument was redacted.
+                    if operation_id is not None and PIIMasker.mask(args_dict, fail_closed=False) != args_dict:
+                        return ToolExecutionResult(output="Cần đối soát thao tác đã gửi trước khi tiếp tục.",
+                                                   is_error=True, error_code="unknown_outcome")
                     cached = reservation.output
                     if isinstance(cached, str) and cached.startswith("commerce-result-v1:"):
                         try:
@@ -312,12 +328,12 @@ class ToolExecutor:
                     f"Đơn hàng {order_id} có trạng thái {order_status}.", fail_closed=True
                 )
         elif not tool_spec.side_effect and isinstance(raw_output, ConfirmedCatalogRead):
-            if tool_name == "lookup_laptop_catalog":
+            if "total_matched" in raw_output and "items" in raw_output:
                 products, count, price_field = raw_output["items"], raw_output["total_matched"], "price_vnd"
-            elif tool_name == "get_product_details":
+            elif "product" in raw_output:
                 products, count, price_field = [raw_output["product"]], 1, "priceVnd"
-            elif tool_name == "compare_products":
-                products, count, price_field = raw_output["comparison"], raw_output["total"], "priceVnd"
+            elif "comparison" in raw_output:
+                products, count, price_field = raw_output["comparison"], raw_output.get("total", len(raw_output["comparison"])), "priceVnd"
             else:
                 products, count, price_field = [], 0, ""
             if price_field:

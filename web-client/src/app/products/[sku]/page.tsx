@@ -1,17 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useParams } from 'next/navigation';
 import { BrandSectionBackground } from '@/components/patterns';
-import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
+import {
+  getLaptopBySku,
+  BASELINE_LAPTOP_CATALOG,
+} from '@/features/catalog/services/catalog.get';
+import { LaptopProduct } from '@/features/catalog/types';
 import { formatVND } from '@/lib/utils';
 import {
   CheckCircle2,
   Building2,
   ShieldCheck,
-  ShoppingCart,
   CreditCard,
   Scale,
   ArrowLeft,
@@ -19,19 +22,49 @@ import {
   HardDrive,
   Monitor,
   BatteryCharging,
-  Sparkles,
+  RefreshCw,
+  Database,
 } from 'lucide-react';
 
 export default function ProductDetailPage() {
   const params = useParams<{ sku: string }>();
   const rawSku = decodeURIComponent(params?.sku || 'LT-ASUS-VIVO15-OLED').toUpperCase();
-  const product =
-    BASELINE_LAPTOP_CATALOG.find((p) => p.sku.toUpperCase() === rawSku) ||
-    BASELINE_LAPTOP_CATALOG[0];
+
+  const [product, setProduct] = useState<LaptopProduct>(() => {
+    return (
+      BASELINE_LAPTOP_CATALOG.find((p) => p.sku.toUpperCase() === rawSku) ||
+      BASELINE_LAPTOP_CATALOG[0]
+    );
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    getLaptopBySku(rawSku).then((live) => {
+      if (!active) return;
+      if (live) setProduct(live);
+      setIsLoading(false);
+    }).catch(() => {
+      if (!active) return;
+      setIsLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [rawSku]);
 
   const [selectedCity, setSelectedCity] = useState<'ALL' | 'HCM' | 'HN' | 'DN'>('ALL');
-  const [selectedStoreId, setSelectedStoreId] = useState(product.branches[0]?.storeId || 'store-hcm-q1');
+  const [selectedStoreId, setSelectedStoreId] = useState(
+    product.branches[0]?.storeId || '10000000-0000-0000-0000-000000000001'
+  );
   const [activeAngle, setActiveAngle] = useState(0);
+
+  useEffect(() => {
+    if (product.branches && product.branches.length > 0) {
+      setSelectedStoreId(product.branches[0].storeId);
+    }
+  }, [product]);
 
   const visibleBranches = product.branches.filter(
     (b) => selectedCity === 'ALL' || b.city === selectedCity
@@ -63,9 +96,18 @@ export default function ProductDetailPage() {
           <span>/</span>
           <span className="font-semibold text-slate-900">{product.name}</span>
         </div>
-        <span className="ts-badge-success px-2.5 py-0.5 rounded-full text-[11px] font-bold">
-          SCR-04 • Chi Tiết Sản Phẩm &amp; Tồn Kho Chi Nhánh (PDP)
-        </span>
+        <div className="flex items-center gap-2">
+          {isLoading && (
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-blue-600">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              <span>Đồng bộ tồn kho...</span>
+            </span>
+          )}
+          <span className="ts-badge-success px-2.5 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1">
+            <Database className="w-3 h-3" />
+            <span>SCR-04 • Chi Tiết Sản Phẩm &amp; Tồn Kho Chi Nhánh (PDP)</span>
+          </span>
+        </div>
       </div>
 
       {/* Main PDP 2-Column Layout */}
@@ -283,4 +325,3 @@ export default function ProductDetailPage() {
     </BrandSectionBackground>
   );
 }
-

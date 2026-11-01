@@ -14,6 +14,8 @@ import { ForbiddenException, ExecutionContext, BadRequestException } from '@nest
 import { createMockVariantRepository } from '../../test/test-bed.helper';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from '../auth/public-api';
+import { InternalUserGuard } from './internal-user.guard';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 
 describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', () => {
   let controller: InternalAgentController;
@@ -22,6 +24,15 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
   let configService: ConfigService;
   const customerRequest = { internalUser: { id: 'cust-1', role: 'CUSTOMER' } };
   const idemKey = '9d493fb7-ef26-4fc2-8e55-0d131047d21b';
+
+  it('requires an authenticated user for operation status and uses their identity', async () => {
+    const guards = Reflect.getMetadata(GUARDS_METADATA, InternalAgentController.prototype.operationStatus);
+    expect(guards).toContain(InternalUserGuard);
+    const lookup = jest.spyOn(service, 'operationStatus').mockResolvedValue({ outcome: 'unknown' });
+    await expect(controller.operationStatus(customerRequest, idemKey)).resolves.toEqual({ outcome: 'unknown' });
+    expect(lookup).toHaveBeenCalledWith('cust-1', idemKey);
+    await expect(controller.operationStatus(undefined, idemKey)).rejects.toThrow(BadRequestException);
+  });
 
   const mockInventoryService = {
     getStores: jest.fn().mockResolvedValue([

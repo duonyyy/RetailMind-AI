@@ -189,3 +189,4 @@ Sau khi hoàn tất cả 5 Tracks:
 2. `npm test` chạy toàn bộ 15 test suites đạt **100% PASS**.
 3. Kiến trúc phân tầng đạt chuẩn: Không có vi phạm cross-feature hoặc shared-to-feature.
 4. Chạy lại bài kiểm tra chấp nhận E2E trực tiếp trên Docker container PostgreSQL 16 thật.
+

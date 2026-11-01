@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { BrandSectionBackground } from '@/components/patterns';
 import {
   ShieldCheck,
@@ -18,7 +17,6 @@ import {
 } from 'lucide-react';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [identifier, setIdentifier] = useState('customer@mwg-retailmind.vn');
   const [password, setPassword] = useState('RetailMind@2026');
   const [selectedRole, setSelectedRole] = useState<'customer' | 'admin'>('customer');
@@ -43,6 +41,7 @@ export default function LoginPage() {
       const res = await fetch('/api/proxy/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           email: identifier.trim(),
           password,
@@ -54,9 +53,10 @@ export default function LoginPage() {
         return;
       }
       const body = await res.json();
-      const role = String(body?.data?.user?.role || '').toLowerCase();
+      const userObj = body?.data?.user || body?.user;
+      const role = String(userObj?.role || '').toLowerCase();
       setSuccessMsg('Đăng nhập thành công.');
-      router.push(role === 'admin' ? '/admin/dashboard' : '/');
+      window.location.href = role === 'admin' ? '/admin/dashboard' : '/';
     } catch {
       setErrorMsg('Không thể kết nối dịch vụ đăng nhập.');
     } finally {
@@ -222,4 +222,3 @@ export default function LoginPage() {
     </BrandSectionBackground>
   );
 }
-

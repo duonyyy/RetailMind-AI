@@ -1,7 +1,17 @@
-import { Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import Decimal from 'decimal.js';
 import { Variant } from './entities/variant.entity';
+import { Product } from './entities/product.entity';
+import { Brand } from './entities/brand.entity';
+import { Category } from './entities/category.entity';
 
 export interface LaptopFilter {
   minRam?: number;
@@ -35,6 +45,15 @@ export class CatalogService {
     @Optional()
     @InjectRepository(Variant)
     private readonly variantRepo?: Repository<Variant>,
+    @Optional()
+    @InjectRepository(Product)
+    private readonly productRepo?: Repository<Product>,
+    @Optional()
+    @InjectRepository(Brand)
+    private readonly brandRepo?: Repository<Brand>,
+    @Optional()
+    @InjectRepository(Category)
+    private readonly categoryRepo?: Repository<Category>,
   ) {}
 
   /**
@@ -107,6 +126,82 @@ export class CatalogService {
 
   async compareVariants(skuList: string[]): Promise<RetailProductDTO[]> {
     return Promise.all(skuList.map((sku) => this.getProductBySku(sku)));
+  }
+
+  async createProduct(dto: {
+    sku: string;
+    name: string;
+    brand: string;
+    priceVnd: string;
+    ramGb?: number;
+    storageGb?: number;
+    cpuModel?: string;
+    gpuModel?: string;
+  }): Promise<RetailProductDTO> {
+    if (!this.variantRepo) throw new ServiceUnavailableException('Danh mục sản phẩm hiện không khả dụng.');
+
+    const cleanSku = dto.sku.toUpperCase().trim();
+    const existing = await this.variantRepo.findOne({ where: { sku: cleanSku } });
+    if (existing) {
+      throw new ConflictException(`Mã SKU ${cleanSku} đã tồn tại trong hệ thống.`);
+    }
+
+    let brandId = '20000000-0000-0000-0000-000000000001';
+    if (this.brandRepo) {
+      const b = await this.brandRepo.findOne({ where: { slug: dto.brand.toLowerCase() } });
+      if (b) brandId = b.id;
+    }
+
+    let categoryId = '30000000-0000-0000-0000-000000000001';
+    if (this.categoryRepo) {
+      const c = await this.categoryRepo.findOne({ where: { slug: 'laptop-office' } });
+      if (c) categoryId = c.id;
+    }
+
+    const slug = cleanSku.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    let productId = '40000000-0000-0000-0000-000000000001';
+    if (this.productRepo) {
+      const p = await this.productRepo.save(
+        this.productRepo.create({
+          brand_id: brandId,
+          category_id: categoryId,
+          name: dto.name,
+          slug: `${slug}-${Date.now().toString().slice(-4)}`,
+          description: dto.name,
+          is_active: true,
+        }),
+      );
+      productId = p.id;
+    }
+
+    const priceDecimal = new Decimal(dto.priceVnd.replace(/\D/g, '') || '0');
+    const variant = await this.variantRepo.save(
+      this.variantRepo.create({
+        product_id: productId,
+        sku: cleanSku,
+        name: dto.name,
+        price_vnd: priceDecimal,
+        ram_gb: dto.ramGb || 16,
+        storage_gb: dto.storageGb || 512,
+        cpu_model: dto.cpuModel || 'Intel Core i5',
+        gpu_model: dto.gpuModel || 'Intel Iris Xe Graphics',
+        is_active: true,
+      }),
+    );
+
+    return this.mapVariantToDto(variant, {
+      brand_name: dto.brand,
+      category_name: 'Laptop Học tập - Văn phòng',
+    });
+  }
+
+  async toggleActive(sku: string): Promise<{ sku: string; isActive: boolean }> {
+    if (!this.variantRepo) throw new ServiceUnavailableException('Danh mục sản phẩm hiện không khả dụng.');
+    const variant = await this.variantRepo.findOne({ where: { sku: sku.toUpperCase().trim() } });
+    if (!variant) throw new NotFoundException('Không tìm thấy biến thể.');
+    variant.is_active = !variant.is_active;
+    await this.variantRepo.save(variant);
+    return { sku: variant.sku, isActive: variant.is_active };
   }
 
   private mapVariantToDto(v: Variant, raw?: any): RetailProductDTO {

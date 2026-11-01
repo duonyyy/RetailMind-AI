@@ -78,6 +78,7 @@ export async function apiFetch<T>(
     try {
       const response = await fetch(url, {
         ...fetchInit,
+        credentials: fetchInit.credentials || 'include',
         headers,
       });
 
@@ -92,6 +93,27 @@ export async function apiFetch<T>(
       if (response.ok) {
         const unwrappedData =
           raw && typeof raw === 'object' && 'data' in raw ? (raw.data as T) : (raw as T);
+
+        // Defensive normalization: If unwrappedData is an object without its own 'data' property,
+        // provide a non-enumerable fallback .data pointing to itself so callers doing res.data?.data
+        // will safely receive the payload instead of undefined!
+        if (
+          unwrappedData &&
+          typeof unwrappedData === 'object' &&
+          !Array.isArray(unwrappedData) &&
+          !('data' in unwrappedData)
+        ) {
+          try {
+            Object.defineProperty(unwrappedData, 'data', {
+              value: unwrappedData,
+              enumerable: false,
+              writable: true,
+              configurable: true,
+            });
+          } catch {
+            // Ignore if object is non-extensible
+          }
+        }
 
         return {
           success: true,
@@ -142,4 +164,3 @@ export async function apiFetch<T>(
     }
   }
 }
-

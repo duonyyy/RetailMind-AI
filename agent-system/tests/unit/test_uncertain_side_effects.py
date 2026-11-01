@@ -93,3 +93,37 @@ def test_backend_receives_uuid4_key_and_same_call_replays_without_dispatch(monke
         assert uuid.UUID(backend_key).version == 4
         assert next(iter(executor.idempotency._records.values()))['backend_idempotency_key'] == backend_key
     asyncio.run(run())
+
+
+def test_stable_operation_id_replays_across_new_tool_call_ids(monkeypatch):
+    registry = ToolRegistry()
+    registry.load_from_module_file(Path('domains/retail_store/tools.py'))
+    calls = []
+    async def backend(endpoint, payload, ctx):
+        calls.append(ctx.idempotency_key)
+        return {'status': 'success', 'customer_id': 'alice', 'sku': 'ABC', 'action': 'add', 'is_favorited': True}
+    monkeypatch.setitem(registry.get('manage_favorite').func.__globals__, '_call_nestjs_tool', backend)
+    executor = ToolExecutor(registry, PolicyEngine.load_from_file('domains/retail_store/policies.yaml'))
+    principal = Principal(user_id='alice', role='customer')
+    operation_id = str(uuid.uuid4())
+    async def run():
+        args = {'sku': 'ABC', 'action': 'add'}
+        first = await executor.execute('manage_favorite', args, principal, thread_id='one', call_id='one', operation_id=operation_id)
+        second = await executor.execute('manage_favorite', args, principal, thread_id='two', call_id='two', operation_id=operation_id)
+        conflict = await executor.execute('manage_favorite', {'sku': 'DEF', 'action': 'add'}, principal, call_id='three', operation_id=operation_id)
+        assert first.commerce_answer == second.commerce_answer and not second.is_error
+        assert conflict.error_code == 'idempotency_conflict'
+        assert calls == [operation_id]
+    asyncio.run(run())
+
+
+def test_invalid_operation_id_never_dispatches(monkeypatch):
+    registry = ToolRegistry()
+    registry.load_from_module_file(Path('domains/retail_store/tools.py'))
+    calls = []
+    async def backend(*args):
+        calls.append(1)
+    monkeypatch.setitem(registry.get('manage_favorite').func.__globals__, '_call_nestjs_tool', backend)
+    executor = ToolExecutor(registry, PolicyEngine.load_from_file('domains/retail_store/policies.yaml'))
+    result = asyncio.run(executor.execute('manage_favorite', {'sku': 'ABC'}, Principal(user_id='alice', role='customer'), operation_id='invalid'))
+    assert result.is_error and result.error_code == 'validation_error' and calls == []

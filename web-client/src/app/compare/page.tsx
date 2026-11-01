@@ -1,17 +1,21 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { BrandSectionBackground } from '@/components/patterns';
-import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
+import {
+  BASELINE_LAPTOP_CATALOG,
+  getLaptopComparison,
+} from '@/features/catalog/services/catalog.get';
+import { LaptopProduct } from '@/features/catalog/types';
 import { parseVndBigInt } from '@/lib/utils';
 import {
   Scale,
-  CheckCircle2,
-  Sparkles,
   ShoppingCart,
   SlidersHorizontal,
   Award,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function ComparePage() {
@@ -22,10 +26,28 @@ export default function ComparePage() {
     'LT-ACER-SWIFT-GO14',
   ]);
   const [onlyDifferences, setOnlyDifferences] = useState(false);
-
-  const comparedItems = BASELINE_LAPTOP_CATALOG.filter((item) =>
-    selectedSkus.includes(item.sku)
+  const [comparedItems, setComparedItems] = useState<LaptopProduct[]>(() =>
+    BASELINE_LAPTOP_CATALOG.filter((item) => selectedSkus.includes(item.sku))
   );
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    getLaptopComparison(selectedSkus).then((items) => {
+      if (!active) return;
+      if (items && items.length > 0) {
+        setComparedItems(items);
+      }
+      setIsLoading(false);
+    }).catch(() => {
+      if (!active) return;
+      setIsLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [selectedSkus]);
 
   const minPriceBig = comparedItems.reduce(
     (min, it) => {
@@ -48,7 +70,7 @@ export default function ComparePage() {
     {
       label: 'Vi xử lý (CPU)',
       diff: true,
-      render: (it: (typeof comparedItems)[0]) => (
+      render: (it: LaptopProduct) => (
         <div className="space-y-1.5">
           <div className="font-bold text-slate-900">{it.cpuModel}</div>
           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
@@ -66,7 +88,7 @@ export default function ComparePage() {
     {
       label: 'Bộ nhớ RAM & Bus',
       diff: true,
-      render: (it: (typeof comparedItems)[0]) => (
+      render: (it: LaptopProduct) => (
         <div>
           <span className="font-bold text-blue-600">{it.ramGb} GB</span>
           <p className="text-[11px] text-slate-600 mt-0.5">{it.ramType}</p>
@@ -76,7 +98,7 @@ export default function ComparePage() {
     {
       label: 'Card đồ họa (GPU)',
       diff: true,
-      render: (it: (typeof comparedItems)[0]) => (
+      render: (it: LaptopProduct) => (
         <div className="space-y-1">
           <span className="font-semibold text-slate-800 block">{it.gpuModel}</span>
           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
@@ -91,7 +113,7 @@ export default function ComparePage() {
     {
       label: 'Màn hình & Tần số quét',
       diff: true,
-      render: (it: (typeof comparedItems)[0]) => (
+      render: (it: LaptopProduct) => (
         <div>
           <div className="font-semibold text-slate-800">{it.displaySpec}</div>
           <span className="text-[11px] text-emerald-700 font-medium">
@@ -103,14 +125,14 @@ export default function ComparePage() {
     {
       label: 'Ổ cứng lưu trữ',
       diff: false,
-      render: (it: (typeof comparedItems)[0]) => (
+      render: (it: LaptopProduct) => (
         <span className="font-medium text-slate-800">{it.storageType}</span>
       ),
     },
     {
       label: 'Thời lượng Pin & Trọng lượng',
       diff: true,
-      render: (it: (typeof comparedItems)[0]) => (
+      render: (it: LaptopProduct) => (
         <div className="space-y-1">
           <div className="font-bold text-slate-800 tabular-nums">
             Pin ~{it.batteryHours} giờ • Nặng {it.weightKg}
@@ -127,7 +149,7 @@ export default function ComparePage() {
     {
       label: 'Chính sách Đổi trả & Bảo hành',
       diff: false,
-      render: (it: (typeof comparedItems)[0]) => (
+      render: (it: LaptopProduct) => (
         <span className="text-emerald-700 font-semibold">
           Đổi mới {it.returnDays} ngày • Bảo hành {it.warrantyMonths} tháng
         </span>
@@ -157,21 +179,32 @@ export default function ComparePage() {
           </p>
         </div>
 
-        <label className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 cursor-pointer shadow-xs">
-          <input
-            type="checkbox"
-            checked={onlyDifferences}
-            onChange={(e) => setOnlyDifferences(e.target.checked)}
-            className="rounded text-blue-600"
-          />
-          <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
-          <span>Chỉ xem điểm khác biệt</span>
-        </label>
+        <div className="flex items-center gap-3">
+          {isLoading && (
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-blue-600">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <span>Đang tải thông số...</span>
+            </span>
+          )}
+          <label className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 cursor-pointer shadow-xs">
+            <input
+              type="checkbox"
+              checked={onlyDifferences}
+              onChange={(e) => setOnlyDifferences(e.target.checked)}
+              className="rounded text-blue-600"
+            />
+            <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
+            <span>Chỉ xem điểm khác biệt</span>
+          </label>
+        </div>
       </div>
 
       {/* Model Selector Pills */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-2">
-        <span className="text-xs font-bold text-slate-600 mr-2">Chọn từ 2 đến 4 mẫu máy:</span>
+        <span className="text-xs font-bold text-slate-600 mr-2 flex items-center gap-1.5">
+          <Database className="w-3.5 h-3.5 text-blue-600" />
+          <span>Chọn từ 2 đến 4 mẫu máy:</span>
+        </span>
         {BASELINE_LAPTOP_CATALOG.map((item) => {
           const active = selectedSkus.includes(item.sku);
           return (

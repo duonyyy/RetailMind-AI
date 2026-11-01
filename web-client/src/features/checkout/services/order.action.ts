@@ -6,6 +6,9 @@ import { ConfirmOrderPayload, ConfirmedOrderReceipt } from '../types';
 import { apiFetch } from '@/lib/api-client';
 
 const STORE_NAMES: Record<string, string> = {
+  '10000000-0000-0000-0000-000000000001': 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM (MWG_HCM_001)',
+  '10000000-0000-0000-0000-000000000002': 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội (MWG_HN_002)',
+  '10000000-0000-0000-0000-000000000003': 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng (MWG_DN_003)',
   'store-hcm-q1': '136 Nguyễn Thái Học, Q.1, TP.HCM (MWG_HCM_001)',
   'store-hn-cg': '117 Thái Hà, Đống Đa, Hà Nội (MWG_HN_002)',
   'store-dn-hc': '320 đường 2/9, Hải Châu, Đà Nẵng (MWG_DN_003)',
@@ -57,7 +60,13 @@ export async function confirmOrderAction(
   }
 
   const orderData = res.data?.data || res.data;
-  if (!orderData?.orderNo || !orderData?.orderId || !orderData?.storeId || typeof orderData.totalVnd !== 'string' || !orderData.confirmedAt) {
+  if (
+    !orderData?.orderNo ||
+    !orderData?.orderId ||
+    !orderData?.storeId ||
+    typeof orderData.totalVnd !== 'string' ||
+    !orderData.confirmedAt
+  ) {
     throw new Error('Không nhận được biên nhận đơn hàng hợp lệ từ hệ thống.');
   }
 

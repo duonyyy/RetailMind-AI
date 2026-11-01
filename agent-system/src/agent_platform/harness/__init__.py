@@ -138,6 +138,7 @@ class AgentHarness:
         query: str,
         principal: Principal,
         thread_id: Optional[str] = None,
+        operation_id: Optional[str] = None,
     ) -> AgentState:
         """Executes full agent reasoning cycle, records FinOps telemetry, updates memory, and returns completed state."""
         session_key = thread_id or f"thread_{uuid.uuid4().hex[:12]}"
@@ -190,6 +191,8 @@ class AgentHarness:
             principal=principal,
             thread_id=session_key,
             memory_context=mem_ctx if mem_ctx else None,
+            operation_id=operation_id,
+            require_operation_id=True,
         )
 
         # Persist HITL approval request durably whenever workflow pauses for approval

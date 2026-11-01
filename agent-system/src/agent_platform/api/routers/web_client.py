@@ -12,15 +12,18 @@ Primary Gateway Router serving Next.js Frontend Client (apps/frontend):
 """
 
 import json
+import os
 import time
+import httpx
 from typing import Optional, Dict, Any, List, Literal
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, UUID4
 
 from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.state.principal import Principal
-from agent_platform.api.deps import get_optional_principal, owned_thread, require_role
+from agent_platform.api.deps import get_optional_principal, get_principal, owned_thread, require_role
+from agent_platform.request_credentials import current_authorization
 from agent_platform.harness.guards.sanitizer import InputSanitizer
 from agent_platform.harness.guards.injection import PromptInjectionDetector
 from agent_platform.llm.providers.scripted import ScriptedLLM
@@ -35,6 +38,39 @@ class LegacyChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=4000)
     session_id: Optional[str] = Field(default=None, max_length=128)
     client_id: Optional[str] = "default_client"
+    operation_id: Optional[UUID4] = None
+
+
+class OperationStatusRequest(BaseModel):
+    operation_id: UUID4
+
+
+@router.post('/chat/operation-status')
+async def operation_status(req: OperationStatusRequest, request: Request, principal: Principal = Depends(get_principal)):
+    """Read Core's receipt using the original customer's credential; never re-execute."""
+    authorization = current_authorization()
+    if not authorization:
+        raise HTTPException(status_code=401, detail='Authentication required.')
+    base_url = os.getenv('NESTJS_BACKEND_URL', os.getenv('CORE_API_URL', 'http://localhost:4000')).rstrip('/')
+    secret = os.getenv('INTERNAL_TOOL_SECRET', 'secret_token_internal_retailmind')
+    transport = getattr(request.app.state, 'commerce_transport', None)
+    try:
+        async with httpx.AsyncClient(timeout=3.0, transport=transport, follow_redirects=False) as client:
+            response = await client.post(f'{base_url}/api/v1/internal/tools/operation-status', headers={
+                'Authorization': authorization, 'X-Internal-Secret': secret,
+                'Idempotency-Key': str(req.operation_id),
+            })
+        if response.status_code != 200:
+            raise ValueError('Core status unavailable')
+        data = response.json()
+        if not isinstance(data, dict) or data.get('outcome') not in ('confirmed', 'unknown'):
+            raise ValueError('Invalid Core status')
+        operation = data.get('operation')
+        if operation is not None and operation not in ('add_to_cart', 'remove_from_cart', 'cancel_simulated_order', 'create_support_ticket', 'manage_favorite'):
+            raise ValueError('Invalid Core operation')
+        return {'outcome': data['outcome'], 'operation': operation}
+    except (httpx.HTTPError, ValueError, TypeError):
+        raise HTTPException(status_code=503, detail='Không thể đối soát lúc này; chưa xác định được kết quả.')
 
 
 class HitlReviewRequest(BaseModel):
@@ -99,6 +135,7 @@ async def chat_stream_endpoint(
                 query=clean_query,
                 principal=principal,
                 thread_id=thread_id,
+                **({"operation_id": str(req.operation_id)} if req.operation_id else {}),
             )
         except PersistenceError:
             err_msg = "Hệ thống lưu trữ đang gián đoạn; chưa xác định được kết quả thao tác. Hãy kiểm tra trạng thái trước khi thử lại."
@@ -198,6 +235,7 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request, principal
             query=clean_query,
             principal=principal,
             thread_id=thread_id,
+            **({"operation_id": str(req.operation_id)} if req.operation_id else {}),
         )
     except PermissionError:
         raise HTTPException(status_code=404, detail="Chat session not found.")

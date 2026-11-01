@@ -17,6 +17,8 @@ class OrchestratorRunner:
         thread_id: Optional[str] = None,
         run_id: Optional[str] = None,
         memory_context: Optional[str] = None,
+        operation_id: Optional[str] = None,
+        require_operation_id: bool = False,
     ) -> AgentState:
         session_thread_id = thread_id or f"thread_{uuid.uuid4().hex[:12]}"
         session_run_id = run_id or f"run_{uuid.uuid4().hex[:8]}"
@@ -24,6 +26,8 @@ class OrchestratorRunner:
         initial_state: AgentState = {
             "thread_id": session_thread_id,
             "run_id": session_run_id,
+            "operation_id": operation_id,
+            "require_operation_id": require_operation_id,
             "principal": principal,
             "domain": "default",
             "prompt_version": "v3",

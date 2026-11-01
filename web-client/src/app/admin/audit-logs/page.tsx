@@ -51,7 +51,11 @@ export default function AdminAuditLogsPage() {
       let rawLogs: any[] = [];
       if (res.ok) {
         const body = await res.json();
-        rawLogs = Array.isArray(body) ? body : body?.data || [];
+        rawLogs =
+          body?.data?.items ||
+          (Array.isArray(body?.data) ? body?.data : []) ||
+          body?.items ||
+          (Array.isArray(body) ? body : []);
       }
 
       if (!rawLogs.length) {

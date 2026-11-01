@@ -341,3 +341,62 @@ def test_multiple_tool_calls_with_write_are_not_dispatched(graph_setup, monkeypa
                                     {'name': 'view_cart', 'arguments': {}, 'id': '2'}]}
     result = asyncio.run(create_tool_exec_node(executor)(state))
     assert result['status'] == 'abstained' and calls == []
+
+
+def test_real_harness_requires_operation_id_before_write(graph_setup, monkeypatch):
+    from agent_platform.agents.workflow.nodes.tool_exec import create_tool_exec_node
+    _, registry, domain = graph_setup
+    calls = []
+    async def core(*args, **kwargs):
+        calls.append(1)
+    monkeypatch.setitem(registry.get('add_to_cart').func.__globals__, '_call_nestjs_tool', core)
+    executor = ToolExecutor(registry, PolicyEngine.load_from_file(domain / 'policies.yaml'))
+    state = {'principal': Principal(user_id='alice', role='customer'), 'require_operation_id': True,
+             'pending_tool_calls': [{'name': 'add_to_cart', 'arguments': {'sku': 'ABC'}, 'id': '1'}]}
+    result = asyncio.run(create_tool_exec_node(executor)(state))
+    assert result['status'] == 'abstained' and 'thiếu mã' in result['final_answer'] and not calls
+
+
+def test_graph_propagates_operation_id_to_core(graph_setup, monkeypatch):
+    pack, registry, domain = graph_setup
+    seen = []
+    async def core(endpoint, payload, ctx):
+        seen.append(ctx.idempotency_key)
+        return {'status': 'success', 'customer_id': 'alice', 'sku': 'ABC', 'action': 'add', 'is_favorited': True}
+    monkeypatch.setitem(registry.get('manage_favorite').func.__globals__, '_call_nestjs_tool', core)
+    llm = ScriptedLLM()
+    llm.queue_tool_call('manage_favorite', {'sku': 'ABC', 'action': 'add'}, 'model-call')
+    runner = AgentRunner(build_agent_graph(pack, llm, registry, ToolExecutor(registry, PolicyEngine.load_from_file(domain / 'policies.yaml'))))
+    operation_id = '9d493fb7-ef26-4fc2-8e55-0d131047d21b'
+    state = asyncio.run(runner.execute('Yêu thích ABC', Principal(user_id='alice', role='customer'), operation_id=operation_id, require_operation_id=True))
+    assert state['status'] == 'done' and seen == [operation_id]
+
+
+def test_operation_status_forwards_authenticated_identity_and_never_retries():
+    import httpx
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from agent_platform.api.deps import get_optional_principal
+    from agent_platform.api.routers import web_client
+    from agent_platform.request_credentials import RequestCredentialMiddleware
+    seen = []
+    def core(request):
+        seen.append(request)
+        return httpx.Response(200, json={'outcome': 'confirmed', 'operation': 'manage_favorite'})
+    app = FastAPI()
+    app.add_middleware(RequestCredentialMiddleware)
+    app.include_router(web_client.router)
+    app.dependency_overrides[get_optional_principal] = lambda: Principal(user_id='alice', role='customer')
+    app.state.commerce_transport = httpx.MockTransport(core)
+    operation_id = '9d493fb7-ef26-4fc2-8e55-0d131047d21b'
+    with TestClient(app) as client:
+        response = client.post('/api/chat/operation-status', json={'operation_id': operation_id}, headers={'Authorization': 'Bearer test'})
+        assert response.status_code == 200 and response.json()['outcome'] == 'confirmed'
+        assert len(seen) == 1 and seen[0].url.path.endswith('/operation-status')
+        assert seen[0].headers['idempotency-key'] == operation_id
+        assert seen[0].headers['authorization'] == 'Bearer test'
+        app.state.commerce_transport = httpx.MockTransport(lambda request: httpx.Response(200, json={'outcome': 'success'}))
+        bad = client.post('/api/chat/operation-status', json={'operation_id': operation_id}, headers={'Authorization': 'Bearer test'})
+        assert bad.status_code == 503
+        invalid = client.post('/api/chat/operation-status', json={'operation_id': 'not-a-uuid'}, headers={'Authorization': 'Bearer test'})
+        assert invalid.status_code == 422

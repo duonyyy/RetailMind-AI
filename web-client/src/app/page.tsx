@@ -1,28 +1,60 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Bot, Laptop, MessageCircle, Scale, Send, ShoppingBag, Sparkles } from 'lucide-react';
 
 type Citation = { title?: string; statute?: string; page?: number; snippet?: string; content?: string };
 type Message = { role: 'user' | 'assistant'; text: string; citations?: Citation[] };
+const PENDING_OPERATION_KEY = 'retailmind.pending-operation.v1';
 
 export default function Home() {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pendingOperation, setPendingOperation] = useState<string | null>(null);
+  const [restored, setRestored] = useState(false);
   const session = useRef<string | null>(null);
+
+  useEffect(() => {
+    setPendingOperation(localStorage.getItem(PENDING_OPERATION_KEY));
+    setRestored(true);
+  }, []);
+
+  async function checkPendingOperation() {
+    if (!pendingOperation || loading) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/proxy/chat/operation-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation_id: pendingOperation }),
+      });
+      const data = await res.json();
+      if (res.ok && data.outcome === 'confirmed') {
+        localStorage.removeItem(PENDING_OPERATION_KEY);
+        setPendingOperation(null);
+        setMessages(previous => [...previous, { role: 'assistant', text: 'Core xác nhận thao tác trước đã thực hiện. Bạn có thể kiểm tra trạng thái tương ứng trong tài khoản.' }]);
+      } else {
+        setMessages(previous => [...previous, { role: 'assistant', text: 'Chưa xác định được kết quả. Vui lòng liên hệ hỗ trợ để đối soát trước khi thực hiện lại.' }]);
+      }
+    } catch {
+      setMessages(previous => [...previous, { role: 'assistant', text: 'Chưa thể kết nối để đối soát. Vui lòng thử kiểm tra lại sau.' }]);
+    } finally { setLoading(false); }
+  }
 
   async function ask(text: string) {
     const question = text.trim();
-    if (!question || loading) return;
+    if (!question || loading || pendingOperation || !restored) return;
+    const operationId = crypto.randomUUID();
+    localStorage.setItem(PENDING_OPERATION_KEY, operationId);
+    setPendingOperation(operationId);
     setQuery('');
     setMessages(previous => [...previous, { role: 'user', text: question }]);
     setLoading(true);
     try {
       const response = await fetch('/api/proxy/chat/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: question, ...(session.current ? { session_id: session.current } : {}) }),
+        body: JSON.stringify({ query: question, operation_id: operationId, ...(session.current ? { session_id: session.current } : {}) }),
       });
       if (!response.ok || !response.body) throw new Error('unavailable');
       const reader = response.body.getReader();
@@ -30,6 +62,7 @@ export default function Home() {
       let buffer = '';
       let answer = '';
       let citations: Citation[] = [];
+      let finalStatus: string | undefined;
       const processLine = (line: string) => {
         if (!line.startsWith('data:')) return;
         const data = line.slice(5).trim();
@@ -37,7 +70,7 @@ export default function Home() {
         try {
           const event = JSON.parse(data);
           if (event.type === 'session' && typeof event.session_id === 'string') session.current = event.session_id;
-          if (event.type === 'answer' && typeof event.content === 'string') answer = event.content;
+          if (event.type === 'answer' && typeof event.content === 'string') { answer = event.content; finalStatus = event.status; }
           if (event.type === 'citations' && Array.isArray(event.data)) citations = event.data;
           if (event.type === 'error') answer = event.message || 'Không thể xử lý câu hỏi lúc này.';
         } catch { /* Ignore malformed stream events. */ }
@@ -49,6 +82,10 @@ export default function Home() {
         buffer = lines.pop() || '';
         lines.forEach(processLine);
         if (done) { processLine(buffer); break; }
+      }
+      if (answer && finalStatus && finalStatus !== 'unknown_outcome') {
+        localStorage.removeItem(PENDING_OPERATION_KEY);
+        setPendingOperation(null);
       }
       setMessages(previous => [...previous, { role: 'assistant', text: answer || 'Trợ lý chưa trả về câu trả lời. Vui lòng thử lại.', citations }]);
     } catch {
@@ -87,7 +124,7 @@ export default function Home() {
 
         <section id="tro-ly" className="mt-10 grid scroll-mt-6 gap-6 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 lg:grid-cols-[0.8fr_1.2fr]" aria-labelledby="assistant-heading">
           <div><div className="inline-flex rounded-xl bg-cyan-50 p-3 text-cyan-700"><Bot className="h-6 w-6" /></div><p className="mt-5 text-xs font-bold uppercase tracking-[0.16em] text-blue-600">TRỢ LÝ RETAILMIND</p><h2 id="assistant-heading" className="mt-2 text-2xl font-bold tracking-tight">Bạn cần tư vấn?</h2><p className="mt-3 max-w-sm text-sm leading-6 text-slate-500">Chia sẻ nhu cầu sử dụng hoặc đặt câu hỏi để bắt đầu cuộc trò chuyện.</p><div className="mt-5 flex flex-wrap gap-2">{['Laptop cho sinh viên', 'Chọn RAM bao nhiêu là đủ?'].map(s => <button key={s} type="button" disabled={loading} onClick={() => ask(s)} className="rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50">{s}</button>)}</div></div>
-          <div className="flex min-h-[250px] flex-col rounded-2xl bg-slate-50 p-4 sm:p-5"><div className="flex-1 space-y-3" aria-live="polite"><div className="max-w-[90%] rounded-2xl rounded-tl-sm bg-white p-4 text-sm leading-6 text-slate-700 shadow-sm">Xin chào! Bạn đang tìm laptop cho nhu cầu nào?</div>{messages.map((message, index) => <div key={index} className={`max-w-[90%] whitespace-pre-wrap rounded-2xl p-4 text-sm leading-6 ${message.role === 'user' ? 'ml-auto rounded-tr-sm bg-blue-600 text-white' : 'rounded-tl-sm bg-white text-slate-700 shadow-sm'}`}>{message.text}{!!message.citations?.length && <div className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-500"><p className="font-semibold">Nguồn tham khảo</p>{message.citations.map((citation, i) => <p key={i} className="mt-2">{citation.title || citation.statute || 'Tài liệu'}{citation.page != null ? ` · Trang ${citation.page}` : ''}{citation.snippet || citation.content ? `: ${citation.snippet || citation.content}` : ''}</p>)}</div>}</div>)}{loading && <p className="text-sm text-slate-500" role="status">Đang tìm câu trả lời...</p>}</div><form className="mt-5 flex gap-2" onSubmit={e => { e.preventDefault(); void ask(query); }}><label htmlFor="assistant-query" className="sr-only">Câu hỏi của bạn</label><input id="assistant-query" value={query} maxLength={4000} onChange={e => setQuery(e.target.value)} placeholder="Nhập câu hỏi của bạn..." className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /><button disabled={loading || !query.trim()} className="rounded-xl bg-blue-600 px-4 text-white hover:bg-blue-700 disabled:opacity-50" aria-label="Gửi câu hỏi"><Send className="h-4 w-4" /></button></form></div>
+          <div className="flex min-h-[250px] flex-col rounded-2xl bg-slate-50 p-4 sm:p-5"><div className="flex-1 space-y-3" aria-live="polite"><div className="max-w-[90%] rounded-2xl rounded-tl-sm bg-white p-4 text-sm leading-6 text-slate-700 shadow-sm">Xin chào! Bạn đang tìm laptop cho nhu cầu nào?</div>{messages.map((message, index) => <div key={index} className={`max-w-[90%] whitespace-pre-wrap rounded-2xl p-4 text-sm leading-6 ${message.role === 'user' ? 'ml-auto rounded-tr-sm bg-blue-600 text-white' : 'rounded-tl-sm bg-white text-slate-700 shadow-sm'}`}>{message.text}{!!message.citations?.length && <div className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-500"><p className="font-semibold">Nguồn tham khảo</p>{message.citations.map((citation, i) => <p key={i} className="mt-2">{citation.title || citation.statute || 'Tài liệu'}{citation.page != null ? ` · Trang ${citation.page}` : ''}{citation.snippet || citation.content ? `: ${citation.snippet || citation.content}` : ''}</p>)}</div>}</div>)}{loading && <p className="text-sm text-slate-500" role="status">Đang tìm câu trả lời...</p>}</div>{pendingOperation && !loading && <div className="mt-4 text-sm text-amber-800"><p>Kết quả yêu cầu trước chưa được xác nhận. Hãy kiểm tra trước khi gửi yêu cầu mới.</p><p className="mt-1 break-all text-xs">Mã đối soát: {pendingOperation}</p><button type="button" onClick={() => void checkPendingOperation()} className="mt-2 font-semibold underline">Kiểm tra kết quả</button></div>}<form className="mt-5 flex gap-2" onSubmit={e => { e.preventDefault(); void ask(query); }}><label htmlFor="assistant-query" className="sr-only">Câu hỏi của bạn</label><input id="assistant-query" value={query} maxLength={4000} onChange={e => setQuery(e.target.value)} placeholder="Nhập câu hỏi của bạn..." className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /><button disabled={loading || !!pendingOperation || !restored || !query.trim()} className="rounded-xl bg-blue-600 px-4 text-white hover:bg-blue-700 disabled:opacity-50" aria-label="Gửi câu hỏi"><Send className="h-4 w-4" /></button></form></div>
         </section>
         <footer className="py-8 text-xs text-slate-500">© RetailMind AI · Đồng hành cùng lựa chọn của bạn</footer>
       </div>

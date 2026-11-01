@@ -73,3 +73,4 @@ export class PreviewOrderDto {
   @MaxLength(32, { message: 'Mã giảm giá không quá 32 ký tự.' })
   discountCode?: string;
 }
+

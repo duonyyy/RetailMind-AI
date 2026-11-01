@@ -53,9 +53,17 @@ async function catchAll(
   });
 
   const refreshCookie = cookieStore.get('refresh_token')?.value;
-  if ((path === 'auth/refresh' || path === 'auth/logout') && refreshCookie) forwardedHeaders.set('Cookie', `refresh_token=${encodeURIComponent(refreshCookie)}`);
+  if ((path === 'auth/refresh' || path === 'auth/logout') && refreshCookie) {
+    forwardedHeaders.set('Cookie', `refresh_token=${encodeURIComponent(refreshCookie)}`);
+  }
   const guestCookie = cookieStore.get('retailmind_guest')?.value;
-  if (isAgentRoute && guestCookie && !token) forwardedHeaders.set('Cookie', `retailmind_guest=${encodeURIComponent(guestCookie)}`);
+  if (isAgentRoute && guestCookie && !token) {
+    forwardedHeaders.set('Cookie', `retailmind_guest=${encodeURIComponent(guestCookie)}`);
+  }
+  const rawCookie = req.headers.get('cookie');
+  if (rawCookie && !forwardedHeaders.has('Cookie')) {
+    forwardedHeaders.set('Cookie', rawCookie);
+  }
 
   // 3. Attach Bearer Token from HttpOnly Server Cookie
   if (token) {
@@ -77,6 +85,19 @@ async function catchAll(
       status: response.status,
       headers: response.headers,
     });
+
+    // Forward Set-Cookie headers properly to browser
+    if (typeof (response.headers as any).getSetCookie === 'function') {
+      const setCookies: string[] = (response.headers as any).getSetCookie();
+      for (const cookieStr of setCookies) {
+        nextResponse.headers.append('set-cookie', cookieStr);
+      }
+    } else {
+      const singleCookie = response.headers.get('set-cookie');
+      if (singleCookie) {
+        nextResponse.headers.set('set-cookie', singleCookie);
+      }
+    }
 
     // 5. Expose pagination & trace headers
     const totalCount = response.headers.get('x-total-count');

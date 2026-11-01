@@ -1,11 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { BrandSectionBackground } from '@/components/patterns';
 import { formatVND } from '@/lib/utils';
-import { calculateExactOrderPreview } from '@/features/checkout/services/preview-token.get';
+import {
+  fetchLiveOrderPreview,
+  calculateExactOrderPreview,
+} from '@/features/checkout/services/preview-token.get';
 import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
+import { OrderPreviewResponse } from '@/features/checkout/types';
 import {
   ShoppingCart,
   Trash2,
@@ -17,6 +21,8 @@ import {
   Tag,
   ArrowRight,
   Laptop,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function CartPage() {
@@ -30,8 +36,36 @@ export default function CartPage() {
     },
   ]);
   const [discountCode, setDiscountCode] = useState('MWG_VIP500');
+  const [preview, setPreview] = useState<OrderPreviewResponse>(() =>
+    calculateExactOrderPreview(items, discountCode)
+  );
+  const [isLoading, setIsLoading] = useState(false);
 
-  const preview = calculateExactOrderPreview(items, discountCode);
+  useEffect(() => {
+    let active = true;
+    if (items.length === 0) return;
+
+    setIsLoading(true);
+    fetchLiveOrderPreview({
+      storeId: '10000000-0000-0000-0000-000000000001',
+      items: items.map((it) => ({ sku: it.sku, quantity: it.quantity })),
+      discountCode,
+    })
+      .then((live) => {
+        if (!active) return;
+        setPreview(live);
+        setIsLoading(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPreview(calculateExactOrderPreview(items, discountCode));
+        setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [items, discountCode]);
 
   const handleUpdateQty = (sku: string, delta: number) => {
     setItems((prev) =>
@@ -87,16 +121,25 @@ export default function CartPage() {
             <ShoppingCart className="w-5 h-5 text-blue-600" />
             <span>Giỏ Hàng &amp; Tính Toán Số Học Chính Xác (SCR-07 • UC03)</span>
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            100% phép tính tiền tệ thực thi trên kiểu nguyên lớn (BigInt / NUMERIC(18,0)), triệt tiêu hoàn toàn sai số dấu phẩy động.
+          <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
+            <Database className="w-3.5 h-3.5 text-blue-600" />
+            <span>
+              100% phép tính tiền tệ thực thi qua Core API / PostgreSQL 16+ SSOT, triệt tiêu hoàn toàn sai số dấu phẩy động.
+            </span>
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          {isLoading && (
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-blue-600">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              <span>Đang tính giá...</span>
+            </span>
+          )}
           <button
             type="button"
             onClick={() => handleAddSample('LT-LENOVO-TB14-G6')}
-            className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 shadow-xs"
+            className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 shadow-xs transition"
           >
             <Laptop className="w-3.5 h-3.5 text-blue-600" />
             <span>+ Thêm ThinkBook 14 G6+</span>

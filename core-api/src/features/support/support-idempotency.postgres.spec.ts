@@ -2,17 +2,13 @@
 import { randomUUID } from 'crypto';
 import { DataSource } from 'typeorm';
 import { SupportService } from './support.service';
-import { SupportTicket } from '../orders/public-api';
-import { CustomersService } from '../customers/customers.service';
-import { Favorite } from '../customers/entities/favorite.entity';
+import { SupportTicket, Order, OrderItem, OrdersService } from '../orders/public-api';
+import { CustomersService, Favorite } from '../customers/public-api';
 import { User, Role } from '../auth/public-api';
 import { Variant } from '../catalog/public-api';
-import { Order } from '../orders/entities/order.entity';
-import { OrderItem } from '../orders/entities/order-item.entity';
-import { OrdersService } from '../orders/orders.service';
-import { Inventory } from '../inventory/entities/inventory.entity';
-import { InventoryService } from '../inventory/services/inventory.service';
+import { Inventory, InventoryService } from '../inventory/public-api';
 import { Cart, CartItem, CartService } from '../cart/public-api';
+import { getAgentOperationStatus } from '../../shared/idempotency/transactional-idempotency';
 
 const isolatedUrl = process.env.RETAILMIND_ISOLATED_DB_URL;
 const isolated = isolatedUrl ? new URL(isolatedUrl) : undefined;
@@ -75,6 +71,8 @@ suite('Core agent mutation idempotency on disposable PostgreSQL', () => {
     service = new SupportService(db.getRepository(SupportTicket), db);
     const replay = await service.createTicket(customer, input, key);
     expect(replay).toEqual(first);
+    expect(await getAgentOperationStatus(db.manager, customer, key)).toEqual({ outcome: 'confirmed', operation: 'create_support_ticket' });
+    expect(await getAgentOperationStatus(db.manager, '00000000-0000-4000-8000-000000000009', key)).toEqual({ outcome: 'unknown' });
     await expect(service.createTicket(customer, { ...input, title: 'Different request' }, key)).rejects.toThrow();
     expect((await db.query('SELECT count(*)::int AS n FROM support_tickets'))[0].n).toBe(1);
   }, 30000);

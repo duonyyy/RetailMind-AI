@@ -31,10 +31,11 @@ export function formatVND(amount: number | string | bigint): string {
 /**
  * Exact integer VND math helper using BigInt to eliminate IEEE 754 float errors
  */
-export function parseVndBigInt(amount: string | number | bigint): bigint {
+export function parseVndBigInt(amount?: string | number | bigint | null): bigint {
+  if (amount == null) return BigInt(0);
   if (typeof amount === "bigint") return amount;
   if (typeof amount === "number") return BigInt(Math.round(amount));
-  const clean = amount.replace(/[^\d-]/g, "");
+  const clean = String(amount).replace(/[^\d-]/g, "");
   return clean ? BigInt(clean) : BigInt(0);
 }
 

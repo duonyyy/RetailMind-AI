@@ -14,7 +14,10 @@ export interface BranchInventoryRecord {
 export interface StockAdjustmentRequest {
   sku: string;
   branchCode: string;
-  deltaPhysicalQty: number;
+  deltaPhysicalQty?: number;
+  deltaQty?: number;
+  newPhysicalQty: number;
   reason: string;
+  initiatedBy?: string;
 }
 

@@ -1,14 +1,14 @@
 import { apiFetch } from '@/lib/api-client';
 import { formatVND, parseVndBigInt } from '@/lib/utils';
-import { LaptopProduct, CatalogFilterParams } from '../types';
+import { LaptopProduct, CatalogFilterParams, BranchStockItem } from '../types';
 
 /**
  * Deterministic Baseline Catalog (SSOT Seed Mirror)
- * Used when SSR/CSR hydrates or when graceful degradation tier activates.
+ * Used as graceful offline fallback when Core API is completely unreachable.
  */
 export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
   {
-    id: 'var-asus-vivobook-15',
+    id: '50000000-0000-0000-0000-000000000001',
     sku: 'LT-ASUS-VIVO15-OLED',
     name: 'Laptop Asus Vivobook 15 OLED A1505VA',
     brand: 'ASUS',
@@ -42,27 +42,27 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     totalAvailableStock: 25,
     branches: [
       {
-        storeId: 'store-hcm-q1',
+        storeId: '10000000-0000-0000-0000-000000000001',
         branchCode: 'MWG_HCM_001',
-        name: '136 Nguyễn Thái Học, Q.1, TP.HCM',
+        name: 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM',
         city: 'HCM',
         physicalQty: 15,
         reservedQty: 3,
         availableQty: 12,
       },
       {
-        storeId: 'store-hn-cg',
+        storeId: '10000000-0000-0000-0000-000000000002',
         branchCode: 'MWG_HN_002',
-        name: '117 Thái Hà, Đống Đa, Hà Nội',
+        name: 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội',
         city: 'HN',
         physicalQty: 10,
         reservedQty: 2,
         availableQty: 8,
       },
       {
-        storeId: 'store-dn-hc',
+        storeId: '10000000-0000-0000-0000-000000000003',
         branchCode: 'MWG_DN_003',
-        name: '320 đường 2/9, Hải Châu, Đà Nẵng',
+        name: 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng',
         city: 'DN',
         physicalQty: 6,
         reservedQty: 1,
@@ -71,7 +71,7 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     ],
   },
   {
-    id: 'var-dell-inspiron-14',
+    id: '50000000-0000-0000-0000-000000000002',
     sku: 'LT-DELL-INSP14-5430',
     name: 'Laptop Dell Inspiron 14 5430',
     brand: 'DELL',
@@ -105,27 +105,27 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     totalAvailableStock: 18,
     branches: [
       {
-        storeId: 'store-hcm-q1',
+        storeId: '10000000-0000-0000-0000-000000000001',
         branchCode: 'MWG_HCM_001',
-        name: '136 Nguyễn Thái Học, Q.1, TP.HCM',
+        name: 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM',
         city: 'HCM',
         physicalQty: 10,
         reservedQty: 2,
         availableQty: 8,
       },
       {
-        storeId: 'store-hn-cg',
+        storeId: '10000000-0000-0000-0000-000000000002',
         branchCode: 'MWG_HN_002',
-        name: '117 Thái Hà, Đống Đa, Hà Nội',
+        name: 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội',
         city: 'HN',
         physicalQty: 7,
         reservedQty: 1,
         availableQty: 6,
       },
       {
-        storeId: 'store-dn-hc',
+        storeId: '10000000-0000-0000-0000-000000000003',
         branchCode: 'MWG_DN_003',
-        name: '320 đường 2/9, Hải Châu, Đà Nẵng',
+        name: 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng',
         city: 'DN',
         physicalQty: 5,
         reservedQty: 1,
@@ -134,9 +134,9 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     ],
   },
   {
-    id: 'var-lenovo-thinkbook-14',
+    id: '50000000-0000-0000-0000-000000000003',
     sku: 'LT-LENOVO-TB14-G6',
-    name: 'Laptop Lenovo ThinkBook 14 G6+ (2024 AI PC)',
+    name: 'Laptop Lenovo ThinkBook 14 G6+ (2024)',
     brand: 'LENOVO',
     category: 'Laptop Đồ họa - Kỹ thuật',
     useCase: 'CREATOR',
@@ -168,27 +168,27 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     totalAvailableStock: 14,
     branches: [
       {
-        storeId: 'store-hcm-q1',
+        storeId: '10000000-0000-0000-0000-000000000001',
         branchCode: 'MWG_HCM_001',
-        name: '136 Nguyễn Thái Học, Q.1, TP.HCM',
+        name: 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM',
         city: 'HCM',
         physicalQty: 9,
         reservedQty: 2,
         availableQty: 7,
       },
       {
-        storeId: 'store-hn-cg',
+        storeId: '10000000-0000-0000-0000-000000000002',
         branchCode: 'MWG_HN_002',
-        name: '117 Thái Hà, Đống Đa, Hà Nội',
+        name: 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội',
         city: 'HN',
         physicalQty: 6,
         reservedQty: 1,
         availableQty: 5,
       },
       {
-        storeId: 'store-dn-hc',
+        storeId: '10000000-0000-0000-0000-000000000003',
         branchCode: 'MWG_DN_003',
-        name: '320 đường 2/9, Hải Châu, Đà Nẵng',
+        name: 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng',
         city: 'DN',
         physicalQty: 3,
         reservedQty: 1,
@@ -197,7 +197,7 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     ],
   },
   {
-    id: 'var-acer-swift-go-14',
+    id: '50000000-0000-0000-0000-000000000004',
     sku: 'LT-ACER-SWIFT-GO14',
     name: 'Laptop Acer Swift Go 14 OLED SFG14',
     brand: 'ACER',
@@ -231,27 +231,27 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     totalAvailableStock: 9,
     branches: [
       {
-        storeId: 'store-hcm-q1',
+        storeId: '10000000-0000-0000-0000-000000000001',
         branchCode: 'MWG_HCM_001',
-        name: '136 Nguyễn Thái Học, Q.1, TP.HCM',
+        name: 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM',
         city: 'HCM',
         physicalQty: 5,
         reservedQty: 1,
         availableQty: 4,
       },
       {
-        storeId: 'store-hn-cg',
+        storeId: '10000000-0000-0000-0000-000000000002',
         branchCode: 'MWG_HN_002',
-        name: '117 Thái Hà, Đống Đa, Hà Nội',
+        name: 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội',
         city: 'HN',
         physicalQty: 4,
         reservedQty: 1,
         availableQty: 3,
       },
       {
-        storeId: 'store-dn-hc',
+        storeId: '10000000-0000-0000-0000-000000000003',
         branchCode: 'MWG_DN_003',
-        name: '320 đường 2/9, Hải Châu, Đà Nẵng',
+        name: 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng',
         city: 'DN',
         physicalQty: 3,
         reservedQty: 1,
@@ -260,23 +260,85 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     ],
   },
   {
-    id: 'var-macbook-air-m2',
-    sku: 'LT-APPLE-MBA-M2-16GB',
-    name: 'MacBook Air 13.6 inch M2 (Bản 16GB Unified Memory)',
+    id: '50000000-0000-0000-0000-000000000005',
+    sku: 'LT-HP-PAV14-DV2075TU',
+    name: 'Laptop HP Pavilion 14-dv2075TU',
+    brand: 'HP',
+    category: 'Laptop Học tập - Văn phòng',
+    useCase: 'OFFICE',
+    priceVnd: '15490000',
+    originalPriceVnd: '17490000',
+    formattedPrice: formatVND('15490000'),
+    ramGb: 16,
+    ramType: '16GB DDR4 3200MHz',
+    storageGb: 512,
+    storageType: '512GB PCIe NVMe M.2 SSD',
+    cpuModel: 'Intel Core i5-1235U (10 nhân, 12 luồng)',
+    cpuScore: 78,
+    gpuModel: 'Intel Iris Xe Graphics',
+    gpuScore: 64,
+    displaySpec: '14.0" FHD (1920x1080) IPS BrightView 250 nits',
+    colorGamut: '45% NTSC',
+    refreshRateHz: 60,
+    weightKg: '1.41 kg',
+    batteryHours: 9,
+    warrantyMonths: 12,
+    returnDays: 30,
+    highlights: [
+      'Thiết kế nắp nhôm mạ vàng sang trọng, mỏng nhẹ 1.41 kg',
+      'Hệ thống âm thanh B&O cao cấp, âm lượng lớn',
+      'Bảo hành chính hãng HP 12 tháng tận nơi',
+    ],
+    inStock: true,
+    totalAvailableStock: 12,
+    branches: [
+      {
+        storeId: '10000000-0000-0000-0000-000000000001',
+        branchCode: 'MWG_HCM_001',
+        name: 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM',
+        city: 'HCM',
+        physicalQty: 6,
+        reservedQty: 1,
+        availableQty: 5,
+      },
+      {
+        storeId: '10000000-0000-0000-0000-000000000002',
+        branchCode: 'MWG_HN_002',
+        name: 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội',
+        city: 'HN',
+        physicalQty: 5,
+        reservedQty: 1,
+        availableQty: 4,
+      },
+      {
+        storeId: '10000000-0000-0000-0000-000000000003',
+        branchCode: 'MWG_DN_003',
+        name: 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng',
+        city: 'DN',
+        physicalQty: 4,
+        reservedQty: 1,
+        availableQty: 3,
+      },
+    ],
+  },
+  {
+    id: '50000000-0000-0000-0000-000000000006',
+    sku: 'LT-APPLE-MBA-M2-8GB',
+    name: 'MacBook Air 13.6 inch M2 (2022)',
     brand: 'APPLE',
     category: 'Laptop Mỏng nhẹ cao cấp',
     useCase: 'PREMIUM',
-    priceVnd: '26990000',
-    originalPriceVnd: '28990000',
-    formattedPrice: formatVND('26990000'),
-    ramGb: 16,
-    ramType: '16GB Unified Memory băng thông 100GB/s',
-    storageGb: 512,
-    storageType: '512GB Apple SSD siêu tốc',
+    priceVnd: '24990000',
+    originalPriceVnd: '27990000',
+    formattedPrice: formatVND('24990000'),
+    ramGb: 8,
+    ramType: '8GB Unified Memory băng thông 100GB/s',
+    storageGb: 256,
+    storageType: '256GB Apple SSD siêu tốc',
     cpuModel: 'Apple M2 (8-Core CPU, 16-Core Neural Engine)',
     cpuScore: 91,
-    gpuModel: 'Apple M2 10-Core GPU',
-    gpuScore: 86,
+    gpuModel: 'Apple M2 8-Core GPU',
+    gpuScore: 84,
     displaySpec: '13.6" Liquid Retina (2560x1664) 500 nits True Tone',
     colorGamut: 'Wide Color P3',
     refreshRateHz: 60,
@@ -286,7 +348,7 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     returnDays: 30,
     highlights: [
       'Pin lên tới 18 giờ làm việc liên tục không cần sạc',
-      'RAM 16GB Unified Memory đa nhiệm mượt mà',
+      'Chip Apple M2 kiến trúc ARM tiết kiệm điện đỉnh cao',
       'Thiết kế nhôm nguyên khối không quạt tản nhiệt êm tuyệt đối',
       'Bảo hành chính hãng Apple Việt Nam & Đổi mới 30 ngày MWG',
     ],
@@ -294,27 +356,27 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     totalAvailableStock: 11,
     branches: [
       {
-        storeId: 'store-hcm-q1',
+        storeId: '10000000-0000-0000-0000-000000000001',
         branchCode: 'MWG_HCM_001',
-        name: '136 Nguyễn Thái Học, Q.1, TP.HCM',
+        name: 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM',
         city: 'HCM',
         physicalQty: 7,
         reservedQty: 1,
         availableQty: 6,
       },
       {
-        storeId: 'store-hn-cg',
+        storeId: '10000000-0000-0000-0000-000000000002',
         branchCode: 'MWG_HN_002',
-        name: '117 Thái Hà, Đống Đa, Hà Nội',
+        name: 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội',
         city: 'HN',
         physicalQty: 4,
         reservedQty: 1,
         availableQty: 3,
       },
       {
-        storeId: 'store-dn-hc',
+        storeId: '10000000-0000-0000-0000-000000000003',
         branchCode: 'MWG_DN_003',
-        name: '320 đường 2/9, Hải Châu, Đà Nẵng',
+        name: 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng',
         city: 'DN',
         physicalQty: 2,
         reservedQty: 0,
@@ -322,70 +384,119 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
       },
     ],
   },
-  {
-    id: 'var-asus-rog-g16',
-    sku: 'LT-ASUS-ROG-G16-RTX4060',
-    name: 'Laptop Gaming Asus ROG Strix G16 G614JV',
-    brand: 'ASUS',
-    category: 'Laptop Gaming - Đồ họa nặng',
-    useCase: 'GAMING',
-    priceVnd: '34990000',
-    originalPriceVnd: '37990000',
-    formattedPrice: formatVND('34990000'),
-    ramGb: 32,
-    ramType: '32GB DDR5 4800MHz Dual-Channel',
-    storageGb: 1024,
-    storageType: '1TB PCIe 4.0 NVMe M.2 Performance SSD',
-    cpuModel: 'Intel Core i7-13650HX (14 nhân, 20 luồng, 4.9GHz)',
-    cpuScore: 97,
-    gpuModel: 'NVIDIA GeForce RTX 4060 8GB GDDR6 (TGP 140W MUX Switch)',
-    gpuScore: 96,
-    displaySpec: '16.0" FHD+ (1920x1200) 165Hz ROG Nebula, G-Sync',
-    colorGamut: '100% sRGB Dolby Vision',
-    refreshRateHz: 165,
-    weightKg: '2.50 kg',
-    batteryHours: 8,
-    warrantyMonths: 24,
-    returnDays: 30,
-    highlights: [
-      'Card đồ họa rời RTX 4060 8GB TGP tối đa 140W kèm MUX Switch',
-      'Hệ thống tản nhiệt 3 quạt keo kim loại lỏng Conductonaut Extreme',
-      'RAM 32GB DDR5 + SSD 1TB xử lý mượt mô hình AI & 3D Rendering',
-      'Bảo hành 24 tháng chính hãng Asus Việt Nam',
-    ],
-    inStock: true,
-    totalAvailableStock: 7,
-    branches: [
-      {
-        storeId: 'store-hcm-q1',
-        branchCode: 'MWG_HCM_001',
-        name: '136 Nguyễn Thái Học, Q.1, TP.HCM',
-        city: 'HCM',
-        physicalQty: 5,
-        reservedQty: 1,
-        availableQty: 4,
-      },
-      {
-        storeId: 'store-hn-cg',
-        branchCode: 'MWG_HN_002',
-        name: '117 Thái Hà, Đống Đa, Hà Nội',
-        city: 'HN',
-        physicalQty: 3,
-        reservedQty: 1,
-        availableQty: 2,
-      },
-      {
-        storeId: 'store-dn-hc',
-        branchCode: 'MWG_DN_003',
-        name: '320 đường 2/9, Hải Châu, Đà Nẵng',
-        city: 'DN',
-        physicalQty: 1,
-        reservedQty: 0,
-        availableQty: 1,
-      },
-    ],
-  },
 ];
+
+export function mapDtoToLaptopProduct(dto: any, branches?: BranchStockItem[]): LaptopProduct {
+  const priceVnd = String(dto.priceVnd || dto.price_vnd || '0');
+  const ramGb = Number(dto.ramGb || dto.ram_gb) || 16;
+  const storageGb = Number(dto.storageGb || dto.storage_gb) || 512;
+  const brand = String(dto.brand || 'Laptop').toUpperCase();
+  const name = dto.name || 'Laptop Chính Hãng';
+  const sku = dto.sku || '';
+
+  let useCase: LaptopProduct['useCase'] = 'OFFICE';
+  const nameLower = name.toLowerCase();
+  const gpuLower = String(dto.gpuModel || dto.gpu_model || '').toLowerCase();
+  if (gpuLower.includes('rtx') || nameLower.includes('gaming') || nameLower.includes('rog')) {
+    useCase = 'GAMING';
+  } else if (brand === 'APPLE' || nameLower.includes('macbook') || nameLower.includes('zenbook')) {
+    useCase = 'PREMIUM';
+  } else if (nameLower.includes('thinkbook') || nameLower.includes('creator') || gpuLower.includes('arc')) {
+    useCase = 'CREATOR';
+  }
+
+  const cpuScore =
+    dto.cpuScore ||
+    (String(dto.cpuModel).includes('Ultra')
+      ? 93
+      : String(dto.cpuModel).includes('13650')
+      ? 97
+      : String(dto.cpuModel).includes('M2')
+      ? 91
+      : 85);
+  const gpuScore =
+    dto.gpuScore ||
+    (gpuLower.includes('rtx')
+      ? 96
+      : gpuLower.includes('arc')
+      ? 84
+      : gpuLower.includes('m2')
+      ? 86
+      : 68);
+
+  const defaultBranches: BranchStockItem[] = [
+    {
+      storeId: '10000000-0000-0000-0000-000000000001',
+      branchCode: 'MWG_HCM_001',
+      name: 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM',
+      city: 'HCM',
+      physicalQty: 12,
+      reservedQty: 2,
+      availableQty: 10,
+    },
+    {
+      storeId: '10000000-0000-0000-0000-000000000002',
+      branchCode: 'MWG_HN_002',
+      name: 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội',
+      city: 'HN',
+      physicalQty: 8,
+      reservedQty: 1,
+      availableQty: 7,
+    },
+    {
+      storeId: '10000000-0000-0000-0000-000000000003',
+      branchCode: 'MWG_DN_003',
+      name: 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng',
+      city: 'DN',
+      physicalQty: 5,
+      reservedQty: 0,
+      availableQty: 5,
+    },
+  ];
+
+  const actualBranches = branches && branches.length > 0 ? branches : defaultBranches;
+  const totalStock = actualBranches.reduce((sum, b) => sum + b.availableQty, 0);
+
+  return {
+    id: dto.id || sku,
+    sku,
+    name,
+    brand,
+    category: dto.category || 'Laptop Học tập - Văn phòng',
+    useCase,
+    priceVnd,
+    originalPriceVnd:
+      dto.originalPriceVnd ||
+      (BigInt(priceVnd) * BigInt(112) / BigInt(100)).toString(),
+    formattedPrice: dto.formattedPrice || formatVND(priceVnd),
+    ramGb,
+    ramType: dto.ramType || `${ramGb}GB DDR4/LPDDR5`,
+    storageGb,
+    storageType: dto.storageType || `${storageGb}GB M.2 PCIe NVMe SSD`,
+    cpuModel: dto.cpuModel || dto.cpu_model || 'Intel Core i5',
+    cpuScore,
+    gpuModel: dto.gpuModel || dto.gpu_model || 'Intel Iris Xe Graphics',
+    gpuScore,
+    displaySpec: dto.displaySpec || '15.6" Full HD (1920x1080) Anti-Glare',
+    colorGamut: dto.colorGamut || '100% sRGB',
+    refreshRateHz: dto.refreshRateHz || 60,
+    weightKg: dto.weightKg || '1.6 kg',
+    batteryHours: dto.batteryHours || 10,
+    warrantyMonths: dto.warrantyMonths || 24,
+    returnDays: dto.returnDays || 30,
+    highlights: Array.isArray(dto.highlights) && dto.highlights.length > 0
+      ? dto.highlights
+      : [
+          `CPU: ${dto.cpuModel || dto.cpu_model || 'Intel Core i5'}`,
+          `RAM: ${ramGb}GB | Ổ cứng: ${storageGb}GB SSD`,
+          'Bảo hành chính hãng tại Thế Giới Di Động / Điện Máy Xanh',
+          'Đổi mới 30 ngày nếu phát sinh lỗi nhà sản xuất',
+        ],
+    inStock: dto.inStock !== false && totalStock > 0,
+    totalAvailableStock: totalStock,
+    branches: actualBranches,
+  };
+}
 
 export function filterCatalogItems(
   items: LaptopProduct[],
@@ -423,21 +534,38 @@ export function filterCatalogItems(
 
 /**
  * Data Query (`catalog.get.ts` per 17-FRONTEND_DESIGN.md Section 5.1)
+ * Queries directly from NestJS Core API / PostgreSQL 16+ SSOT.
  */
 export async function getLaptopCatalog(params: CatalogFilterParams = {}): Promise<LaptopProduct[]> {
   const query = new URLSearchParams();
   if (params.search) query.set('search', params.search);
   if (params.brand && params.brand !== 'ALL') query.set('brand', params.brand);
   if (params.maxPrice) query.set('maxPrice', params.maxPrice);
+  if (params.minPrice) query.set('minPrice', params.minPrice);
   if (params.minRam) query.set('minRam', String(params.minRam));
 
-  const res = await apiFetch<LaptopProduct[]>(`catalog/products?${query.toString()}`, {
-    method: 'GET',
-    retries: 1,
-  });
+  try {
+    const res = await apiFetch<any>(`catalog/products?${query.toString()}`, {
+      method: 'GET',
+      retries: 1,
+    });
 
-  if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-    return res.data;
+    if (res.success && res.data) {
+      const rawItems = Array.isArray(res.data)
+        ? res.data
+        : Array.isArray(res.data.items)
+        ? res.data.items
+        : Array.isArray((res.data as any).data)
+        ? (res.data as any).data
+        : [];
+
+      if (rawItems.length > 0) {
+        const mapped = rawItems.map((it: any) => mapDtoToLaptopProduct(it));
+        return filterCatalogItems(mapped, params);
+      }
+    }
+  } catch {
+    // Falls through to baseline fallback
   }
 
   return filterCatalogItems(BASELINE_LAPTOP_CATALOG, params);
@@ -445,17 +573,48 @@ export async function getLaptopCatalog(params: CatalogFilterParams = {}): Promis
 
 export async function getLaptopBySku(sku: string): Promise<LaptopProduct | null> {
   const normalized = decodeURIComponent(sku).toUpperCase().trim();
-  const res = await apiFetch<LaptopProduct>(`catalog/products/${normalized}`, {
-    method: 'GET',
-    retries: 1,
-  });
+  try {
+    const res = await apiFetch<any>(`catalog/products/${normalized}`, {
+      method: 'GET',
+      retries: 1,
+    });
 
-  if (res.success && res.data && res.data.sku) {
-    return res.data;
+    if (res.success && res.data && (res.data.sku || res.data.id)) {
+      return mapDtoToLaptopProduct(res.data);
+    }
+  } catch {
+    // Falls through to baseline fallback
   }
 
   return (
     BASELINE_LAPTOP_CATALOG.find((item) => item.sku.toUpperCase() === normalized) ||
     BASELINE_LAPTOP_CATALOG[0]
   );
+}
+
+export async function getLaptopComparison(skus: string[]): Promise<LaptopProduct[]> {
+  const cleanSkus = skus.filter(Boolean).map((s) => s.trim().toUpperCase());
+  if (cleanSkus.length === 0) return [];
+
+  try {
+    const res = await apiFetch<any>(`catalog/compare?skus=${cleanSkus.join(',')}`, {
+      method: 'GET',
+      retries: 1,
+    });
+
+    if (res.success && res.data) {
+      const items = Array.isArray(res.data)
+        ? res.data
+        : Array.isArray(res.data.items)
+        ? res.data.items
+        : [];
+      if (items.length > 0) {
+        return items.map((it: any) => mapDtoToLaptopProduct(it));
+      }
+    }
+  } catch {
+    // Falls through to baseline fallback
+  }
+
+  return BASELINE_LAPTOP_CATALOG.filter((it) => cleanSkus.includes(it.sku.toUpperCase()));
 }

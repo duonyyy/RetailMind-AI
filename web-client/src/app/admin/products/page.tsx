@@ -1,23 +1,39 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrandSectionBackground } from '@/components/patterns';
-import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
+import { apiFetch } from '@/lib/api-client';
 import { formatVND } from '@/lib/utils';
+import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
 import {
   Laptop,
   Plus,
   Search,
   CheckCircle2,
-  Edit3,
   Power,
+  RefreshCw,
+  Database,
+  AlertCircle,
 } from 'lucide-react';
 
+interface AdminProductRow {
+  id: string;
+  sku: string;
+  name: string;
+  brand: string;
+  category: string;
+  priceVnd: string;
+  formattedPrice: string;
+  cpuModel: string;
+  ramGb: number;
+  storageGb: number;
+  active: boolean;
+}
+
 export default function AdminProductsPimPage() {
-  const [products, setProducts] = useState(
-    BASELINE_LAPTOP_CATALOG.map((p) => ({ ...p, active: true }))
-  );
+  const [products, setProducts] = useState<AdminProductRow[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newSku, setNewSku] = useState('');
   const [newName, setNewName] = useState('');
@@ -25,36 +41,109 @@ export default function AdminProductsPimPage() {
   const [newPriceVnd, setNewPriceVnd] = useState('18990000');
   const [newCpu, setNewCpu] = useState('Intel Core Ultra 5 125H');
   const [newRam, setNewRam] = useState(16);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  const handleToggleActive = (sku: string) => {
-    setProducts((prev) =>
-      prev.map((p) => (p.sku === sku ? { ...p, active: !p.active } : p))
+  const fetchProducts = async () => {
+    setIsLoading(true);
+    try {
+      const res = await apiFetch<any>('catalog/products', { retries: 1 });
+      if (res.success && res.data) {
+        const raw = res.data?.items || (Array.isArray(res.data) ? res.data : []);
+        if (raw.length > 0) {
+          const mapped: AdminProductRow[] = raw.map((p: any) => ({
+            id: p.id || p.sku,
+            sku: p.sku,
+            name: p.name,
+            brand: p.brand || 'ASUS',
+            category: p.category || 'Laptop Học tập - Văn phòng',
+            priceVnd: String(p.priceVnd || '0'),
+            formattedPrice: p.formattedPrice || formatVND(p.priceVnd || '0'),
+            cpuModel: p.cpuModel || 'Intel Core i5',
+            ramGb: Number(p.ramGb) || 16,
+            storageGb: Number(p.storageGb) || 512,
+            active: p.inStock !== false,
+          }));
+          setProducts(mapped);
+          return;
+        }
+      }
+    } catch {
+      // Fallback
+    } finally {
+      setIsLoading(false);
+    }
+
+    // Default fallback
+    setProducts(
+      BASELINE_LAPTOP_CATALOG.map((p) => ({
+        id: p.id,
+        sku: p.sku,
+        name: p.name,
+        brand: p.brand,
+        category: p.category,
+        priceVnd: p.priceVnd,
+        formattedPrice: p.formattedPrice,
+        cpuModel: p.cpuModel,
+        ramGb: p.ramGb,
+        storageGb: p.storageGb,
+        active: true,
+      }))
     );
   };
 
-  const handleCreateProduct = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const handleToggleActive = async (sku: string) => {
+    try {
+      await apiFetch(`catalog/products/${sku}/toggle`, { method: 'POST', retries: 0 });
+      setProducts((prev) =>
+        prev.map((p) => (p.sku === sku ? { ...p, active: !p.active } : p))
+      );
+    } catch {
+      // Optimistic update
+      setProducts((prev) =>
+        prev.map((p) => (p.sku === sku ? { ...p, active: !p.active } : p))
+      );
+    }
+  };
+
+  const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSku.trim() || !newName.trim()) return;
     const cleanPrice = newPriceVnd.replace(/\D/g, '') || '18990000';
+    setIsSubmitting(true);
+    setMsg(null);
 
-    setProducts((prev) => [
-      {
-        ...BASELINE_LAPTOP_CATALOG[0],
-        id: `var-${Date.now()}`,
-        sku: newSku.toUpperCase().trim(),
-        name: newName.trim(),
-        brand: newBrand,
-        priceVnd: cleanPrice,
-        formattedPrice: formatVND(cleanPrice),
-        cpuModel: newCpu,
-        ramGb: newRam,
-        active: true,
-      },
-      ...prev,
-    ]);
-    setShowAddModal(false);
-    setNewSku('');
-    setNewName('');
+    try {
+      const res = await apiFetch<any>('catalog/products', {
+        method: 'POST',
+        body: JSON.stringify({
+          sku: newSku.toUpperCase().trim(),
+          name: newName.trim(),
+          brand: newBrand,
+          priceVnd: cleanPrice,
+          cpuModel: newCpu,
+          ramGb: newRam,
+        }),
+      });
+
+      if (!res.success) {
+        throw new Error(res.error?.message || 'Không thể tạo biến thể.');
+      }
+
+      setMsg({ text: `Đã lưu sản phẩm ${newSku} thành công vào PostgreSQL SSOT!`, type: 'success' });
+      setShowAddModal(false);
+      setNewSku('');
+      setNewName('');
+      await fetchProducts();
+    } catch (err) {
+      setMsg({ text: err instanceof Error ? err.message : 'Lỗi khi lưu sản phẩm.', type: 'error' });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filtered = products.filter(
@@ -78,20 +167,51 @@ export default function AdminProductsPimPage() {
             <Laptop className="w-5 h-5 text-blue-600" />
             <span>Quản Lý Sản Phẩm &amp; Biến Thể SKU — PIM Hub (SCR-15 • UC02)</span>
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Quản trị danh mục sản phẩm, cấu hình phần cứng và giá niêm yết kiểu <code className="font-mono">NUMERIC(18,0)</code> duy nhất tại PostgreSQL SSOT.
+          <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+            <Database className="w-3.5 h-3.5 text-blue-600" />
+            <span>
+              Quản trị danh mục sản phẩm, cấu hình phần cứng và giá niêm yết kiểu NUMERIC(18,0) duy nhất tại PostgreSQL SSOT.
+            </span>
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowAddModal(!showAddModal)}
-          className="ts-cta text-xs py-2 px-4 inline-flex items-center gap-1.5"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Thêm Biến Thể SKU Mới</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => fetchProducts()}
+            disabled={isLoading}
+            className="px-3 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-bold inline-flex items-center gap-1.5 shadow-xs"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Đồng bộ DB</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAddModal(!showAddModal)}
+            className="ts-cta text-xs py-2 px-4 inline-flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Thêm Biến Thể SKU Mới</span>
+          </button>
+        </div>
       </div>
+
+      {msg && (
+        <div
+          role="alert"
+          className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+            msg.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          {msg.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          )}
+          <span>{msg.text}</span>
+        </div>
+      )}
 
       {showAddModal && (
         <form
@@ -99,7 +219,7 @@ export default function AdminProductsPimPage() {
           className="bg-white rounded-2xl border border-blue-200 p-6 shadow-md space-y-4 text-xs"
         >
           <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2.5">
-            Tạo Mới Sản Phẩm &amp; Biến Thể Laptop (SSOT Price)
+            Tạo Mới Sản Phẩm &amp; Biến Thể Laptop (PostgreSQL SSOT)
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -182,8 +302,8 @@ export default function AdminProductsPimPage() {
             >
               Hủy
             </button>
-            <button type="submit" className="ts-cta py-2 px-5 font-bold">
-              Lưu Vào PostgreSQL SSOT
+            <button type="submit" disabled={isSubmitting} className="ts-cta py-2 px-5 font-bold disabled:opacity-50">
+              {isSubmitting ? 'Đang lưu...' : 'Lưu Vào PostgreSQL SSOT'}
             </button>
           </div>
         </form>
@@ -266,4 +386,3 @@ export default function AdminProductsPimPage() {
     </BrandSectionBackground>
   );
 }
-

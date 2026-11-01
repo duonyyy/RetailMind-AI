@@ -7,6 +7,7 @@ import {
   Headers,
   UseGuards,
   BadRequestException,
+  HttpCode,
 } from '@nestjs/common';
 import { InternalAgentService } from './internal-agent.service';
 import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
@@ -24,6 +25,13 @@ export class InternalAgentController {
       throw new BadRequestException('Cần danh tính người dùng đã xác thực.');
     }
     return user;
+  }
+
+  @Post('operation-status')
+  @HttpCode(200)
+  @UseGuards(InternalUserGuard)
+  async operationStatus(@Req() request: any, @Headers('idempotency-key') key?: string) {
+    return this.agentService.operationStatus(this.requester(request).id, key);
   }
 
   // 1. Tìm kiếm laptop

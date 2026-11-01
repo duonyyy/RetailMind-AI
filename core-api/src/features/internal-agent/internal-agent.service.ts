@@ -13,6 +13,8 @@ import { SupportService } from '../support/public-api';
 import { CustomersService } from '../customers/public-api';
 import { CartService, type CartDTO } from '../cart/public-api';
 import Decimal from 'decimal.js';
+import { DataSource } from 'typeorm';
+import { getAgentOperationStatus } from '../../shared/idempotency/transactional-idempotency';
 
 @Injectable()
 export class InternalAgentService {
@@ -24,7 +26,15 @@ export class InternalAgentService {
     @Optional() private readonly supportService?: SupportService,
     @Optional() private readonly customersService?: CustomersService,
     @Optional() private readonly cartService?: CartService,
+    @Optional() private readonly dataSource?: DataSource,
   ) {}
+
+  async operationStatus(customerId: string, idempotencyKey?: string) {
+    if (!this.dataSource?.isInitialized) {
+      throw new ServiceUnavailableException('Dịch vụ đối soát hiện không khả dụng.');
+    }
+    return getAgentOperationStatus(this.dataSource.manager, customerId, idempotencyKey);
+  }
 
   /**
    * Tool 1: Tìm kiếm laptop theo tiêu chuẩn cấu hình và giá

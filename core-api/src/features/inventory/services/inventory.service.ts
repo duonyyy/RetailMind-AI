@@ -38,6 +38,37 @@ export class InventoryService {
     return rows.map((r: any) => ({ id: r.id, code: r.code, name: r.name, address: r.display_address || '', phone: r.phone_number || '' }));
   }
 
+  async getInventoryMatrix(): Promise<any[]> {
+    const rows = await this.db().manager.query(`
+      SELECT 
+        i.store_id AS "storeId",
+        s.code AS "branchCode",
+        s.name AS "branchName",
+        v.id AS "variantId",
+        v.sku AS "sku",
+        v.name AS "name",
+        i.on_hand_qty AS "physicalQty",
+        i.reserved_qty AS "reservedQty",
+        (i.on_hand_qty - i.reserved_qty) AS "availableQty",
+        5 AS "safetyThreshold",
+        i.updated_at AS "lastUpdated"
+      FROM inventory i
+      JOIN stores s ON s.id = i.store_id
+      JOIN variants v ON v.id = i.variant_id
+      WHERE s.is_active = true AND v.is_active = true
+      ORDER BY s.code ASC, v.sku ASC
+    `);
+    return rows.map((r: any) => ({
+      id: `${r.storeId}-${r.variantId}`,
+      ...r,
+      physicalQty: Number(r.physicalQty),
+      reservedQty: Number(r.reservedQty),
+      availableQty: Number(r.availableQty),
+      safetyThreshold: Number(r.safetyThreshold),
+      lastUpdated: new Date(r.lastUpdated || Date.now()).toLocaleString('vi-VN'),
+    }));
+  }
+
   async getStock(storeId: string, variantId: string, transactionManager?: EntityManager): Promise<StockDTO> {
     const manager = transactionManager || this.db().manager;
     const store = await this.resolveStore(manager, storeId);

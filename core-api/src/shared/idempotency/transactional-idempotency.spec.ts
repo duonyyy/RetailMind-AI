@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { transactionalIdempotency } from './transactional-idempotency';
+import { getAgentOperationStatus, transactionalIdempotency } from './transactional-idempotency';
 
 describe('transactional idempotency (mock manager)', () => {
   const key = '9d493fb7-ef26-4fc2-8e55-0d131047d21b';
@@ -35,5 +35,16 @@ describe('transactional idempotency (mock manager)', () => {
     const execute = jest.fn();
     await expect(transactionalIdempotency(manager, 'alice', 'ticket', key, {}, execute)).rejects.toThrow(ConflictException);
     expect(execute).not.toHaveBeenCalled();
+  });
+  it('reports only the authenticated actor\'s committed operation without exposing the saved payload', async () => {
+    await transactionalIdempotency(manager, 'alice', 'ticket', key, {}, async () => ({ private: 'secret' }));
+    expect(await getAgentOperationStatus(manager, 'alice', key)).toEqual({ outcome: 'confirmed', operation: 'ticket' });
+    expect(await getAgentOperationStatus(manager, 'bob', key)).toEqual({ outcome: 'unknown' });
+  });
+  it('treats missing and unfinished records as unknown, never as proof of failure', async () => {
+    expect(await getAgentOperationStatus(manager, 'alice', key)).toEqual({ outcome: 'unknown' });
+    records.set(`agent:alice:${key}`, { status: 'processing', response_payload: null });
+    expect(await getAgentOperationStatus(manager, 'alice', key)).toEqual({ outcome: 'unknown' });
+    await expect(getAgentOperationStatus(manager, 'alice', 'bad')).rejects.toThrow(BadRequestException);
   });
 });
