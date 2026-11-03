@@ -85,7 +85,7 @@ describe('OrdersService (SSOT Commerce, ACID & Order Lifecycle)', () => {
     const order1 = await ordersService.checkout(dto, idempotencyKey);
     expect(order1.orderNo).toBeDefined();
     expect(order1.status).toBe('placed');
-    expect(mockCartService.clearCart).toHaveBeenCalledWith('cust-test-01');
+    expect(mockCartService.clearCart).not.toHaveBeenCalled(); // buy-now leaves unrelated cart items intact
 
     // Second checkout call with identical idempotencyKey
     const order2 = await ordersService.checkout(dto, idempotencyKey);

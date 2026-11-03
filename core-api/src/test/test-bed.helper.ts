@@ -677,6 +677,10 @@ export function createMockDataSource(options: MockDbOptions = {}) {
     manager: createMockEntityManager([]),
   };
 
+  mockDataSource.transaction = jest.fn().mockImplementation(async (levelOrExecute: any, execute?: any) => {
+    const callback = execute || levelOrExecute;
+    return callback({ ...mockDataSource.manager, getRepository: mockDataSource.getRepository });
+  });
   return mockDataSource;
 }
 

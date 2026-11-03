@@ -4,10 +4,11 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { BrandSectionBackground } from '@/components/patterns';
 import {
-  BASELINE_LAPTOP_CATALOG,
+  getLaptopCatalog,
   getLaptopComparison,
 } from '@/features/catalog/services/catalog.get';
 import { LaptopProduct } from '@/features/catalog/types';
+import { ScreenEmpty } from '@/components/commons/ScreenEmpty';
 import { parseVndBigInt } from '@/lib/utils';
 import {
   Scale,
@@ -19,16 +20,15 @@ import {
 } from 'lucide-react';
 
 export default function ComparePage() {
-  const [selectedSkus, setSelectedSkus] = useState<string[]>([
-    'LT-ASUS-VIVO15-OLED',
-    'LT-DELL-INSP14-5430',
-    'LT-LENOVO-TB14-G6',
-    'LT-ACER-SWIFT-GO14',
-  ]);
+  const [selectedSkus, setSelectedSkus] = useState<string[]>([]);
+  const [options, setOptions] = useState<LaptopProduct[]>([]);
+  useEffect(() => {
+    let active = true;
+    getLaptopCatalog().then(items => { if (active) { setOptions(items); setSelectedSkus(items.slice(0, 2).map(item => item.sku)); } }).catch(() => { if (active) setOptions([]); });
+    return () => { active = false; };
+  }, []);
   const [onlyDifferences, setOnlyDifferences] = useState(false);
-  const [comparedItems, setComparedItems] = useState<LaptopProduct[]>(() =>
-    BASELINE_LAPTOP_CATALOG.filter((item) => selectedSkus.includes(item.sku))
-  );
+  const [comparedItems, setComparedItems] = useState<LaptopProduct[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -36,12 +36,13 @@ export default function ComparePage() {
     setIsLoading(true);
     getLaptopComparison(selectedSkus).then((items) => {
       if (!active) return;
-      if (items && items.length > 0) {
+      if (items) {
         setComparedItems(items);
       }
       setIsLoading(false);
     }).catch(() => {
       if (!active) return;
+      setComparedItems([]);
       setIsLoading(false);
     });
     return () => {
@@ -151,7 +152,7 @@ export default function ComparePage() {
       diff: false,
       render: (it: LaptopProduct) => (
         <span className="text-emerald-700 font-semibold">
-          Đổi mới {it.returnDays} ngày • Bảo hành {it.warrantyMonths} tháng
+          {it.returnDays && it.warrantyMonths ? `Đổi trả ${it.returnDays} ngày • Bảo hành ${it.warrantyMonths} tháng` : 'Chính sách chưa được xác nhận'}
         </span>
       ),
     },
@@ -172,10 +173,10 @@ export default function ComparePage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Scale className="w-5 h-5 text-blue-600" />
-            <span>Ma Trận So Sánh Kỹ Thuật Đối Đầu 4 Máy (SCR-05 • UC02)</span>
+            <span>So Sánh Chi Tiết Laptop Đối Đầu</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Đối chiếu trực diện hiệu năng CPU/GPU, độ phủ màu màn hình, trọng lượng và giá niêm yết PostgreSQL SSOT.
+            Đối chiếu trực diện hiệu năng CPU/GPU, độ phủ màu màn hình, trọng lượng và giá niêm yết chính hãng.
           </p>
         </div>
 
@@ -205,7 +206,7 @@ export default function ComparePage() {
           <Database className="w-3.5 h-3.5 text-blue-600" />
           <span>Chọn từ 2 đến 4 mẫu máy:</span>
         </span>
-        {BASELINE_LAPTOP_CATALOG.map((item) => {
+        {options.map((item) => {
           const active = selectedSkus.includes(item.sku);
           return (
             <button
@@ -223,6 +224,13 @@ export default function ComparePage() {
           );
         })}
       </div>
+
+      {!isLoading && comparedItems.length === 0 && (
+        <ScreenEmpty
+          title="Chưa có sản phẩm nào để so sánh"
+          description="Vui lòng chọn từ 2 đến 4 mẫu laptop từ danh sách phía trên để xem bảng đối chiếu thông số chi tiết."
+        />
+      )}
 
       {/* Comparison Matrix Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { BrandSectionBackground } from '@/components/patterns';
 import { apiFetch } from '@/lib/api-client';
 import { formatVND } from '@/lib/utils';
-import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
+
 import {
   Laptop,
   Plus,
@@ -33,6 +33,7 @@ interface AdminProductRow {
 export default function AdminProductsPimPage() {
   const [products, setProducts] = useState<AdminProductRow[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newSku, setNewSku] = useState('');
@@ -46,23 +47,24 @@ export default function AdminProductsPimPage() {
 
   const fetchProducts = async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const res = await apiFetch<any>('catalog/products', { retries: 1 });
       if (res.success && res.data) {
         const raw = res.data?.items || (Array.isArray(res.data) ? res.data : []);
-        if (raw.length > 0) {
+        if (Array.isArray(raw)) {
           const mapped: AdminProductRow[] = raw.map((p: any) => ({
             id: p.id || p.sku,
             sku: p.sku,
             name: p.name,
-            brand: p.brand || 'ASUS',
-            category: p.category || 'Laptop Học tập - Văn phòng',
+            brand: p.brand || 'Chưa có thông tin',
+            category: p.category || 'Chưa có thông tin',
             priceVnd: String(p.priceVnd || '0'),
             formattedPrice: p.formattedPrice || formatVND(p.priceVnd || '0'),
-            cpuModel: p.cpuModel || 'Intel Core i5',
-            ramGb: Number(p.ramGb) || 16,
-            storageGb: Number(p.storageGb) || 512,
-            active: p.inStock !== false,
+            cpuModel: p.cpuModel || 'Chưa có thông tin',
+            ramGb: p.ramGb ? Number(p.ramGb) : 0,
+            storageGb: p.storageGb ? Number(p.storageGb) : 0,
+            active: p.isActive === true,
           }));
           setProducts(mapped);
           return;
@@ -74,22 +76,8 @@ export default function AdminProductsPimPage() {
       setIsLoading(false);
     }
 
-    // Default fallback
-    setProducts(
-      BASELINE_LAPTOP_CATALOG.map((p) => ({
-        id: p.id,
-        sku: p.sku,
-        name: p.name,
-        brand: p.brand,
-        category: p.category,
-        priceVnd: p.priceVnd,
-        formattedPrice: p.formattedPrice,
-        cpuModel: p.cpuModel,
-        ramGb: p.ramGb,
-        storageGb: p.storageGb,
-        active: true,
-      }))
-    );
+    setLoadError('Không thể tải dữ liệu từ Core. Vui lòng thử lại.');
+    setProducts([]);
   };
 
   useEffect(() => {
@@ -98,16 +86,11 @@ export default function AdminProductsPimPage() {
 
   const handleToggleActive = async (sku: string) => {
     try {
-      await apiFetch(`catalog/products/${sku}/toggle`, { method: 'POST', retries: 0 });
-      setProducts((prev) =>
-        prev.map((p) => (p.sku === sku ? { ...p, active: !p.active } : p))
-      );
-    } catch {
-      // Optimistic update
-      setProducts((prev) =>
-        prev.map((p) => (p.sku === sku ? { ...p, active: !p.active } : p))
-      );
-    }
+      const res = await apiFetch<any>(`catalog/products/${encodeURIComponent(sku)}/toggle`, { method: 'POST', retries: 0 });
+      if (!res.success || typeof res.data?.isActive !== 'boolean') throw new Error('Core chưa xác nhận thay đổi.');
+      setProducts(prev => prev.map(p => p.sku === sku ? { ...p, active: res.data!.isActive } : p));
+    } catch { setMsg({ text: 'Chưa xác nhận thay đổi sản phẩm. Hãy tải lại để kiểm tra.', type: 'error' }); }
+
   };
 
   const handleCreateProduct = async (e: React.FormEvent) => {
@@ -161,6 +144,7 @@ export default function AdminProductsPimPage() {
       withGlow={true}
       className="min-h-full p-6 sm:p-8 space-y-6"
     >
+      {loadError && <p role="alert" className="text-red-700">{loadError}</p>}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
@@ -219,7 +203,7 @@ export default function AdminProductsPimPage() {
           className="bg-white rounded-2xl border border-blue-200 p-6 shadow-md space-y-4 text-xs"
         >
           <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2.5">
-            Tạo Mới Sản Phẩm &amp; Biến Thể Laptop (PostgreSQL SSOT)
+            Tạo Mới Sản Phẩm &amp; Biến Thể Laptop
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -261,7 +245,7 @@ export default function AdminProductsPimPage() {
             </div>
             <div>
               <label className="font-bold text-slate-700 block mb-1">
-                Giá Niêm Yết VNĐ (NUMERIC(18,0)):
+                Giá Niêm Yết VNĐ:
               </label>
               <input
                 type="text"
@@ -303,7 +287,7 @@ export default function AdminProductsPimPage() {
               Hủy
             </button>
             <button type="submit" disabled={isSubmitting} className="ts-cta py-2 px-5 font-bold disabled:opacity-50">
-              {isSubmitting ? 'Đang lưu...' : 'Lưu Vào PostgreSQL SSOT'}
+              {isSubmitting ? 'Đang lưu...' : 'Lưu Sản Phẩm'}
             </button>
           </div>
         </form>
@@ -335,12 +319,19 @@ export default function AdminProductsPimPage() {
                 <th className="py-3.5 px-4">SKU &amp; Tên Sản Phẩm</th>
                 <th className="py-3.5 px-4">Hãng</th>
                 <th className="py-3.5 px-4">Cấu Hình (CPU / RAM / SSD)</th>
-                <th className="py-3.5 px-4">Giá Niêm Yết (SSOT)</th>
+                <th className="py-3.5 px-4">Giá Niêm Yết</th>
                 <th className="py-3.5 px-4 text-center">Trạng Thái</th>
                 <th className="py-3.5 px-4 text-right">Thao Tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
+              {!isLoading && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-500">
+                    Chưa có sản phẩm nào phù hợp với bộ lọc tìm kiếm.
+                  </td>
+                </tr>
+              )}
               {filtered.map((item) => (
                 <tr key={item.sku} className="hover:bg-slate-50/80">
                   <td className="py-3.5 px-4">
@@ -353,7 +344,7 @@ export default function AdminProductsPimPage() {
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-slate-600">
-                    {item.cpuModel} • <strong>{item.ramGb}GB</strong> • {item.storageGb}GB SSD
+                    {item.cpuModel} • {item.ramGb > 0 ? <strong>{item.ramGb}GB RAM</strong> : 'RAM: Chưa có thông tin'} • {item.storageGb > 0 ? `${item.storageGb}GB SSD` : 'SSD: Chưa có thông tin'}
                   </td>
                   <td className="py-3.5 px-4 font-extrabold text-blue-600 tabular-nums">
                     {item.formattedPrice}

@@ -45,6 +45,7 @@ export interface PreviewCalculationDTO {
 }
 
 export interface CheckoutInputDTO {
+  fromCart?: boolean;
   storeId: string;
   customerId?: string;
   items: OrderItemInput[];
@@ -54,6 +55,7 @@ export interface CheckoutInputDTO {
 }
 
 export interface OrderResultDTO {
+  storeName?: string;
   orderId: string;
   orderNo: string;
   status: string;
@@ -178,6 +180,8 @@ export class OrdersService {
       customerId,
       items: normalizedItems,
       discountCode: (dto.discountCode || '').trim().toUpperCase(),
+      fromCart: dto.fromCart === true,
+      paymentMethod: dto.paymentMethod || 'COD',
     });
     const requestHash = createHash('sha256').update(requestHashPayload).digest('hex');
 
@@ -222,6 +226,10 @@ export class OrdersService {
             throw new ConflictException('Bản xem trước không còn khớp. Vui lòng xác nhận lại.');
           }
         }
+        if (dto.fromCart) {
+          if (!this.cartService) throw new ServiceUnavailableException('Dịch vụ giỏ hàng hiện không khả dụng.');
+          await this.cartService.consumeCheckoutCart(customerId, preview.items, runner.manager);
+        }
         await this.inventoryService.reserveMultipleWithLock(
           runner,
           store.id,
@@ -259,6 +267,7 @@ export class OrdersService {
           status: 'placed',
           storeId: store.id,
           customerId,
+          storeName: store.name,
           totalVnd: preview.totalVnd,
           formattedTotal: preview.formattedTotal,
           itemsCount: preview.items.length,
@@ -291,23 +300,12 @@ export class OrdersService {
 
         await runner.commitTransaction();
 
-        // 3. Auto-clear active cart for customer
-        if (this.cartService) {
-          try {
-            await this.cartService.clearCart(customerId);
-          } catch {
-            // Cart was already cleared or empty
-          }
-        }
-
         return result;
       } catch (innerError) {
         await runner.rollbackTransaction();
-        try {
-          await db.getRepository(IdempotencyKey).delete({ key: scopedKey });
-        } catch {
-          // ignore cleanup
-        }
+        // Rolling back already removes this transaction's receipt. Deleting
+        // by key here could erase a concurrent request's committed receipt.
+        if ((innerError as any)?.code === '23505') throw new ConflictException('Yêu cầu đang được xử lý. Hãy thử lại với cùng Idempotency-Key.');
         throw innerError;
       }
     } finally {
@@ -394,7 +392,7 @@ export class OrdersService {
     }
     const db = this.db();
     const rows = await db.manager.query(
-      'SELECT * FROM orders WHERE (id::text = $1 OR order_no = $1) AND ($2 = true OR customer_id::text = $3)',
+      'SELECT orders.*, (SELECT name FROM stores s WHERE s.id = orders.store_id) AS store_name FROM orders WHERE (id::text = $1 OR order_no = $1) AND ($2 = true OR customer_id::text = $3)',
       [orderIdOrNo, principal.role === 'ADMIN', principal.id],
     );
     if (!rows.length) throw new NotFoundException('Không tìm thấy đơn hàng.');
@@ -405,6 +403,7 @@ export class OrdersService {
       orderId: order.id,
       orderNo: order.order_no,
       status: order.status,
+      storeName: order.store_name,
       storeId: order.store_id,
       customerId: order.customer_id,
       totalVnd: String(order.total_vnd),
@@ -506,6 +505,7 @@ export class OrdersService {
   async simulatePayment(
     orderIdOrNo: string,
     principal?: { id: string; role: string },
+    idempotencyKey?: string,
   ): Promise<{
     orderId: string;
     orderNo: string;
@@ -534,6 +534,7 @@ export class OrdersService {
           throw new ForbiddenException('Không có quyền thanh toán đơn hàng của người khác.');
         }
 
+        const pay = async () => {
         if (order.status === 'cancelled') {
           throw new ConflictException('Không thể thanh toán đơn hàng đã bị hủy.');
         }
@@ -573,8 +574,6 @@ export class OrdersService {
           );
         }
 
-        await runner.commitTransaction();
-
         const totalNum = BigInt(order.total_vnd ? order.total_vnd.toString() : '0');
 
         return {
@@ -586,6 +585,12 @@ export class OrdersService {
           totalVnd: String(order.total_vnd),
           formattedTotal: `${new Intl.NumberFormat('vi-VN').format(totalNum)} ₫`,
         };
+        };
+        const result = idempotencyKey !== undefined
+          ? await transactionalIdempotency(runner.manager, principal.id, 'simulate_payment', idempotencyKey, { orderId: order.id }, pay)
+          : await pay();
+        await runner.commitTransaction();
+        return result;
       } catch (error) {
         await runner.rollbackTransaction();
         throw error;

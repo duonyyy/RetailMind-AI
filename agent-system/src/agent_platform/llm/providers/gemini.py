@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from typing import List, Dict, Any, Optional, AsyncIterator
 import httpx
 from agent_platform.llm.base import LLMPort, LLMResponse, LLMChunk, ToolCall, Usage
@@ -32,12 +33,22 @@ class GeminiLLM(LLMPort):
         contents: List[Dict[str, Any]] = []
         for m in messages:
             role = m.get("role", "user")
+            if role == "system":
+                continue
             content = m.get("content", "")
             gemini_role = "model" if role in ("assistant", "model") else "user"
 
             parts: List[Dict[str, Any]] = []
-            if content:
+            if content and role != "tool":
                 parts.append({"text": str(content)})
+
+            if role in ("assistant", "model"):
+                for call in m.get("tool_calls", []):
+                    function = call.get("function", {})
+                    arguments = function.get("arguments", {})
+                    if isinstance(arguments, str):
+                        arguments = json.loads(arguments)
+                    parts.append({"functionCall": {"name": function.get("name", ""), "args": arguments}})
 
             # Check if previous tool response
             if role == "tool":
@@ -52,6 +63,10 @@ class GeminiLLM(LLMPort):
                 contents.append({"role": gemini_role, "parts": parts})
         return contents
 
+    def _system_instruction(self, messages: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        texts = [str(m["content"]) for m in messages if m.get("role") == "system" and m.get("content")]
+        return {"parts": [{"text": "\n\n".join(texts)}]} if texts else None
+
     def _convert_tools(self, tools: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
         """Converts standard tool specs to Gemini functionDeclarations format."""
         if not tools:
@@ -62,7 +77,9 @@ class GeminiLLM(LLMPort):
             declarations.append({
                 "name": spec.get("name", ""),
                 "description": spec.get("description", ""),
-                "parameters": spec.get("parameters", {}),
+                # Pydantic emits JSON Schema (including exclusiveMinimum and
+                # additionalProperties), not Gemini's smaller OpenAPI Schema.
+                "parametersJsonSchema": spec.get("parameters", {}),
             })
         return [{"functionDeclarations": declarations}]
 
@@ -84,6 +101,8 @@ class GeminiLLM(LLMPort):
                 "maxOutputTokens": max_tokens,
             }
         }
+        if instruction := self._system_instruction(redacted_messages):
+            payload["systemInstruction"] = instruction
         if gemini_tools := self._convert_tools(tools):
             payload["tools"] = gemini_tools
 
@@ -117,7 +136,7 @@ class GeminiLLM(LLMPort):
                 elif "functionCall" in p:
                     fc = p["functionCall"]
                     tool_calls.append(ToolCall(
-                        id=f"gemini_call_{len(tool_calls) + 1}",
+                        id=f"gemini_call_{uuid.uuid4().hex}",
                         name=fc.get("name", ""),
                         arguments=fc.get("args", {}),
                     ))
@@ -152,6 +171,8 @@ class GeminiLLM(LLMPort):
             "contents": self._convert_messages(redacted_messages),
             "generationConfig": {"temperature": temperature},
         }
+        if instruction := self._system_instruction(redacted_messages):
+            payload["systemInstruction"] = instruction
         if gemini_tools := self._convert_tools(tools):
             payload["tools"] = gemini_tools
 

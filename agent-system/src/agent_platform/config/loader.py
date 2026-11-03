@@ -70,6 +70,9 @@ def load_settings(
     if api_key_env := os.getenv("LLM_API_KEY"):
         merged["llm"]["api_key"] = api_key_env
 
+    if model_env := os.getenv("LLM_MODEL"):
+        merged["llm"]["model_name"] = model_env
+
     if base_url_env := os.getenv("LLM_BASE_URL"):
         merged["llm"]["base_url"] = base_url_env
 

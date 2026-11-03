@@ -9,6 +9,15 @@ import { Variant } from '../catalog/public-api';
 import { Inventory, InventoryService } from '../inventory/public-api';
 import { Cart, CartItem, CartService } from '../cart/public-api';
 import { getAgentOperationStatus } from '../../shared/idempotency/transactional-idempotency';
+import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { InternalAgentController, InternalAgentService, InternalUserGuard } from '../internal-agent/public-api';
+import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
+import { AuthService } from '../auth/public-api';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import * as path from 'path';
 
 const isolatedUrl = process.env.RETAILMIND_ISOLATED_DB_URL;
 const isolated = isolatedUrl ? new URL(isolatedUrl) : undefined;
@@ -160,6 +169,76 @@ suite('Core agent mutation idempotency on disposable PostgreSQL', () => {
     expect(await delayedResponse).toEqual(replay);
     expect((await db.query('SELECT count(*)::int AS n FROM support_tickets'))[0].n).toBe(2);
   }, 30000);
+
+  it('enforces gateway credentials and replays a ticket over real HTTP and PostgreSQL', async () => {
+    const oldSecret = process.env.JWT_SECRET;
+    process.env.JWT_SECRET = 'isolated-http-fixture-secret';
+    const jwt = new JwtService();
+    const agent = new InternalAgentService({} as any, {} as any, {} as any, undefined, service,
+      { getProfile: async () => ({ phone: input.confirmedProfilePhone }) } as any, undefined, db);
+    const module = await Test.createTestingModule({
+      controllers: [InternalAgentController],
+      providers: [
+        { provide: InternalAgentService, useValue: agent },
+        { provide: JwtService, useValue: jwt },
+        { provide: AuthService, useValue: { getProfile: async (id: string) => ({ id, role: 'CUSTOMER' }) } },
+        { provide: ConfigService, useValue: { get: () => 'isolated-internal-fixture-secret' } },
+        InternalSecretGuard, InternalUserGuard,
+      ],
+    }).compile();
+    const app = module.createNestApplication();
+    try {
+      app.setGlobalPrefix('api/v1');
+      await app.listen(0, '127.0.0.1');
+      const address = app.getHttpServer().address();
+      const url = `http://127.0.0.1:${address.port}/api/v1/internal/tools`;
+      const operationKey = '9d493fb7-ef26-4fc2-8e55-0d131047d222';
+      const token = jwt.sign({ sub: customer, tokenType: 'access' }, { secret: process.env.JWT_SECRET, expiresIn: '5m' });
+      const payload = { order_id: order, title: 'HTTP fixture', description: 'Fixture only' };
+      const headers = { 'Content-Type': 'application/json', 'X-Internal-Secret': 'isolated-internal-fixture-secret',
+        Authorization: `Bearer ${token}`, 'Idempotency-Key': operationKey };
+      const before = Number((await db.query('SELECT count(*) AS n FROM support_tickets'))[0].n);
+      const denied = await fetch(`${url}/create_support_ticket`, { method: 'POST', headers: { ...headers, Authorization: 'Bearer invalid' }, body: JSON.stringify(payload) });
+      expect(denied.status).toBe(401);
+      const badSecret = await fetch(`${url}/create_support_ticket`, { method: 'POST', headers: { ...headers, 'X-Internal-Secret': 'wrong' }, body: JSON.stringify(payload) });
+      expect(badSecret.status).toBe(403);
+      const first = await fetch(`${url}/create_support_ticket`, { method: 'POST', headers, body: JSON.stringify(payload) });
+      const replay = await fetch(`${url}/create_support_ticket`, { method: 'POST', headers, body: JSON.stringify(payload) });
+      expect(first.status).toBe(201);
+      expect(replay.status).toBe(201);
+      const firstBody: any = await first.json();
+      const replayBody: any = await replay.json();
+      expect(replayBody.data.ticket_id).toBe(firstBody.data.ticket_id);
+      const changed = await fetch(`${url}/create_support_ticket`, { method: 'POST', headers, body: JSON.stringify({ ...payload, title: 'Changed payload' }) });
+      expect(changed.status).toBe(409);
+      const status = await fetch(`${url}/operation-status`, { method: 'POST', headers });
+      expect(await status.json()).toEqual({ outcome: 'confirmed', operation: 'create_support_ticket' });
+      const other = jwt.sign({ sub: '00000000-0000-4000-8000-000000000009', tokenType: 'access' }, { secret: process.env.JWT_SECRET, expiresIn: '5m' });
+      const otherStatus = await fetch(`${url}/operation-status`, { method: 'POST', headers: { ...headers, Authorization: `Bearer ${other}` } });
+      expect(await otherStatus.json()).toEqual({ outcome: 'unknown' });
+      expect(Number((await db.query('SELECT count(*) AS n FROM support_tickets'))[0].n)).toBe(before + 1);
+      if (process.env.RETAILMIND_FIXTURE_PYTHON) {
+        const agentDir = path.resolve(process.cwd(), '../agent-system');
+        const child = await promisify(execFile)(process.env.RETAILMIND_FIXTURE_PYTHON,
+          ['-B', 'tests/integration/isolated_agent_core_fixture.py'], {
+            cwd: agentDir, timeout: 30000, env: { ...process.env,
+              PYTHONPATH: [agentDir, path.join(agentDir, 'src')].join(path.delimiter),
+              NESTJS_BACKEND_URL: `http://127.0.0.1:${address.port}`,
+              INTERNAL_TOOL_SECRET: 'isolated-internal-fixture-secret',
+              FIXTURE_CUSTOMER: customer, FIXTURE_TOKEN: token,
+              FIXTURE_OPERATION_ID: '9d493fb7-ef26-4fc2-8e55-0d131047d223',
+              QDRANT_URL: '', EMBEDDING_PROVIDER: 'mock', RERANKER_PROVIDER: 'mock',
+            },
+          });
+        expect(child.stdout).toContain('AGENT_CORE_POSTGRES_FIXTURE_OK');
+        expect(Number((await db.query('SELECT count(*) AS n FROM support_tickets'))[0].n)).toBe(before + 2);
+      }
+    } finally {
+      await app.close();
+      if (oldSecret === undefined) delete process.env.JWT_SECRET;
+      else process.env.JWT_SECRET = oldSecret;
+    }
+  }, 60000);
 
   it('rolls back favorite and cart writes when idempotency result persistence fails', async () => {
     const variant = '00000000-0000-4000-8000-000000000003';

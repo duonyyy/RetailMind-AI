@@ -36,7 +36,8 @@ export interface RetailProductDTO {
   gpuModel: string;
   imageUrl: string;
   highlights: string[];
-  inStock: boolean;
+  inStock: boolean | null;
+  isActive: boolean;
 }
 
 @Injectable()
@@ -72,6 +73,7 @@ export class CatalogService {
         'product.slug AS product_slug',
         'brand.name AS brand_name',
         'category.name AS category_name',
+        '(SELECT COALESCE(SUM(i.on_hand_qty - i.reserved_qty), 0) FROM inventory i JOIN stores s ON s.id = i.store_id WHERE i.variant_id = v.id AND s.is_active = true) AS available_stock',
       ])
       .where('v.is_active = :active', { active: true });
 
@@ -109,6 +111,7 @@ export class CatalogService {
         'product.slug AS product_slug',
         'brand.name AS brand_name',
         'category.name AS category_name',
+        '(SELECT COALESCE(SUM(i.on_hand_qty - i.reserved_qty), 0) FROM inventory i JOIN stores s ON s.id = i.store_id WHERE i.variant_id = v.id AND s.is_active = true) AS available_stock',
       ])
       .where('v.is_active = true')
       .andWhere('(v.sku = :sku OR v.id::text = :sku)', { sku });
@@ -181,10 +184,10 @@ export class CatalogService {
         sku: cleanSku,
         name: dto.name,
         price_vnd: priceDecimal,
-        ram_gb: dto.ramGb || 16,
-        storage_gb: dto.storageGb || 512,
-        cpu_model: dto.cpuModel || 'Intel Core i5',
-        gpu_model: dto.gpuModel || 'Intel Iris Xe Graphics',
+        ram_gb: dto.ramGb,
+        storage_gb: dto.storageGb,
+        cpu_model: dto.cpuModel,
+        gpu_model: dto.gpuModel,
         is_active: true,
       }),
     );
@@ -205,7 +208,8 @@ export class CatalogService {
   }
 
   private mapVariantToDto(v: Variant, raw?: any): RetailProductDTO {
-    const priceStr = v.price_vnd ? v.price_vnd.toString() : '0';
+    if (v.price_vnd === undefined || v.price_vnd === null) throw new ServiceUnavailableException('Chưa xác nhận được giá sản phẩm.');
+    const priceStr = v.price_vnd.toString();
     const priceNum = BigInt(priceStr);
 
     const brandName = raw?.brand_name || raw?.brand?.name || 'Laptop Chính Hãng';
@@ -220,18 +224,19 @@ export class CatalogService {
       category: categoryName,
       priceVnd: priceStr,
       formattedPrice: `${new Intl.NumberFormat('vi-VN').format(priceNum)} ₫`,
-      ramGb: v.ram_gb || 16,
-      storageGb: v.storage_gb || 512,
-      cpuModel: v.cpu_model || 'Intel Core i5',
-      gpuModel: v.gpu_model || 'Intel Iris Xe Graphics',
+      ramGb: v.ram_gb ?? 0,
+      storageGb: v.storage_gb ?? 0,
+      cpuModel: v.cpu_model || 'Chưa xác nhận',
+      gpuModel: v.gpu_model || 'Chưa xác nhận',
       imageUrl: `/images/laptops/${slug}.png`,
       highlights: [
         `CPU: ${v.cpu_model || 'Tiêu chuẩn'}`,
-        `RAM: ${v.ram_gb || 16}GB | Ổ cứng: ${v.storage_gb || 512}GB SSD`,
+        `RAM: ${v.ram_gb ?? 0}GB | Ổ cứng: ${v.storage_gb ?? 0}GB SSD`,
         `Đồ họa: ${v.gpu_model || 'Tích hợp'}`,
-        'Bảo hành chính hãng tại Thế Giới Di Động / Điện Máy Xanh',
+        'Chính sách bảo hành cần được xác nhận riêng.',
       ],
-      inStock: v.is_active,
+      inStock: raw?.available_stock === undefined ? null : Number(raw.available_stock) > 0,
+      isActive: v.is_active,
     };
   }
 }

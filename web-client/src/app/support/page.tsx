@@ -1,8 +1,10 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState } from "react";
-import { BrandSectionBackground } from "@/components/patterns";
-import { apiFetch } from "@/lib/api-client";
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { BrandSectionBackground } from '@/components/patterns';
+import { apiFetch } from '@/lib/api-client';
+import { useCurrentUser } from '@/features/auth/useCurrentUser';
 import {
   Headphones,
   Send,
@@ -12,9 +14,9 @@ import {
   HelpCircle,
   FileText,
   Clock,
-  Database,
   RefreshCw,
-} from "lucide-react";
+  LogIn,
+} from 'lucide-react';
 
 interface SupportTicketRecord {
   id: string;
@@ -27,16 +29,16 @@ interface SupportTicketRecord {
 }
 
 export default function SupportPage() {
-  const [topic, setTopic] = useState("WARRANTY");
-  const [orderNo, setOrderNo] = useState("");
-  const [description, setDescription] = useState("");
+  const { user, isLoading: isAuthLoading } = useCurrentUser();
+  const [topic, setTopic] = useState('WARRANTY');
+  const [orderNo, setOrderNo] = useState('');
+  const [description, setDescription] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const [ticketCode, setTicketCode] = useState("");
-  const [profilePhone, setProfilePhone] = useState("");
-  const phoneLast4 = profilePhone.replace(/\D/g, '').slice(-4);
+  const [ticketCode, setTicketCode] = useState('');
+  const [phone, setPhone] = useState('');
   const [phoneConfirmed, setPhoneConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
@@ -50,39 +52,32 @@ export default function SupportPage() {
         setTickets(list);
       }
     } catch {
-      // Ignored
+      // Ignored if unauthenticated
     } finally {
       setIsLoadingTickets(false);
     }
   };
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetch('/api/proxy/auth/me', { signal: controller.signal, cache: 'no-store' })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('auth');
-        const body = await response.json();
-        const phone = body?.data?.phone || body?.user?.phone;
-        const digits = typeof phone === 'string' ? phone.replace(/\D/g, '') : '';
-        if (digits.length >= 9) {
-          setProfilePhone(phone);
-          setPhoneConfirmed(true);
-        }
-      })
-      .catch((err) => {
-        if (err?.name !== 'AbortError') {
-          // Guest or unauthenticated
-        }
-      });
-
-    fetchTickets();
-
-    return () => controller.abort();
-  }, []);
+    if (user?.phone) {
+      setPhone(user.phone);
+      setPhoneConfirmed(true);
+    }
+    if (user) {
+      fetchTickets();
+    }
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (pending || !description.trim() || !orderNo.trim()) return;
+
+    const contactPhone = phone.trim();
+    if (!contactPhone || contactPhone.replace(/\D/g, '').length < 9) {
+      setError('Vui lòng cung cấp số điện thoại liên hệ hợp lệ (tối thiểu 9 số).');
+      return;
+    }
+
     setError('');
     setPending(true);
     try {
@@ -92,7 +87,7 @@ export default function SupportPage() {
           orderId: orderNo.trim(),
           title: `Yêu cầu hỗ trợ: ${topic}`,
           description: description.trim(),
-          confirmedProfilePhone: profilePhone || '0908123456',
+          confirmedProfilePhone: contactPhone,
         }),
       });
 
@@ -101,11 +96,11 @@ export default function SupportPage() {
       }
 
       const bodyData = res.data?.data || res.data;
-      const code = bodyData?.ticketCode || `TICK-${Date.now().toString().slice(-6)}`;
+      const code = bodyData?.ticketCode || bodyData?.id || 'Đã ghi nhận';
       setTicketCode(code);
       setSubmitted(true);
       fetchTickets();
-    } catch (err) {
+    } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Không thể gửi phiếu hỗ trợ. Vui lòng thử lại.');
     } finally {
       setPending(false);
@@ -123,35 +118,48 @@ export default function SupportPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
           <Headphones className="w-5 h-5 text-blue-600" />
-          <span>Trung Tâm Hỗ Trợ Khách Hàng &amp; Khiếu Nại (UC05)</span>
+          <span>Trung Tâm Hỗ Trợ &amp; Tiếp Nhận Khiếu Nại Khách Hàng</span>
         </h1>
-        <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-          <Database className="w-3.5 h-3.5 text-blue-600" />
-          <span>
-            Gửi yêu cầu bảo hành, đổi trả trực tiếp vào PostgreSQL 16+. Đội ngũ CSKH và Agentic Runtime xử lý 24/7.
-          </span>
+        <p className="text-xs text-slate-500 mt-1">
+          Gửi yêu cầu bảo hành, đổi trả và phản ánh chất lượng dịch vụ. Đội ngũ CSKH tiếp nhận và xử lý liên tục.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Support Ticket Form */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-          {submitted ? (
+          {!user && !isAuthLoading ? (
+            <div className="py-8 text-center space-y-3">
+              <Headphones className="w-10 h-10 text-slate-300 mx-auto" />
+              <h2 className="text-base font-bold text-slate-900">Yêu cầu đăng nhập</h2>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Để tạo phiếu hỗ trợ gắn liền với đơn hàng và được bảo đảm quyền lợi, quý khách vui lòng đăng nhập tài khoản.
+              </p>
+              <Link
+                href="/login"
+                className="ts-cta text-xs py-2 px-5 inline-flex items-center gap-1.5"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Đăng nhập để gửi yêu cầu</span>
+              </Link>
+            </div>
+          ) : submitted ? (
             <div className="ts-badge-success p-6 rounded-2xl text-center space-y-3">
               <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
               <h2 className="text-base font-bold text-slate-900">
                 Đã tiếp nhận yêu cầu hỗ trợ thành công!
               </h2>
               <p className="text-xs text-slate-600 max-w-md mx-auto">
-                Mã phiếu hỗ trợ ghi nhận trong hệ thống:{" "}
+                Mã phiếu hỗ trợ đã được ghi nhận vào hệ thống:{' '}
                 <span className="font-mono font-bold text-slate-900">{ticketCode}</span>.
               </p>
               <button
+                type="button"
                 onClick={() => {
                   setSubmitted(false);
-                  setDescription("");
-                  setOrderNo("");
-                  setTicketCode("");
+                  setDescription('');
+                  setOrderNo('');
+                  setTicketCode('');
                 }}
                 className="ts-cta text-xs py-2 px-4 mt-2"
               >
@@ -189,9 +197,23 @@ export default function SupportPage() {
                   type="text"
                   value={orderNo}
                   onChange={(e) => setOrderNo(e.target.value)}
-                  placeholder="VD: MWG-20261026-9812 hoặc mã UUID đơn hàng"
+                  placeholder="VD: ORD-... hoặc MWG-20261026-9812"
                   required
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1.5">
+                  Số điện thoại liên hệ xác nhận:
+                </label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Nhập số điện thoại liên lạc..."
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -216,17 +238,16 @@ export default function SupportPage() {
                   onChange={(e) => setPhoneConfirmed(e.target.checked)}
                 />
                 <span>
-                  Xác nhận liên hệ qua số điện thoại{" "}
-                  {phoneLast4 ? `(•••• ${phoneLast4})` : "trong hồ sơ khách hàng"}.
+                  Tôi xác nhận số điện thoại trên là chính xác để nhân viên CSKH liên hệ xử lý.
                 </span>
               </label>
 
-              {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
+              {error && <p role="alert" className="text-xs text-red-700 font-medium">{error}</p>}
 
               <button
                 type="submit"
-                disabled={pending || !phoneConfirmed}
-                className="ts-cta text-xs py-2.5 px-5 disabled:opacity-50"
+                disabled={pending || !phoneConfirmed || !orderNo.trim() || !description.trim()}
+                className="ts-cta text-xs py-2.5 px-5 disabled:opacity-50 inline-flex items-center gap-1.5"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>{pending ? 'Đang gửi...' : 'Gửi Yêu Cầu Hỗ Trợ'}</span>
@@ -244,12 +265,12 @@ export default function SupportPage() {
             </h3>
             <div className="space-y-2 text-xs text-slate-600">
               <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="font-bold text-slate-800 block mb-0.5">Quy trình đổi trả 30 ngày?</span>
-                Mang sản phẩm kèm vỏ hộp và hóa đơn đến bất kỳ siêu thị MWG gần nhất để đổi mới 1-1.
+                <span className="font-bold text-slate-800 block mb-0.5">Quy trình đổi mới 30 ngày?</span>
+                Mang sản phẩm kèm đầy đủ phụ kiện, vỏ hộp và hóa đơn đến bất kỳ siêu thị MWG gần nhất để thẩm định.
               </div>
               <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="font-bold text-slate-800 block mb-0.5">Thời gian xử lý bảo hành?</span>
-                Tối đa 7-14 ngày làm việc theo cam kết của trung tâm bảo hành ủy quyền chính hãng.
+                Tùy theo tình trạng lỗi và linh kiện chính hãng, nhân viên kỹ thuật sẽ thông báo tiến độ cụ thể.
               </div>
             </div>
           </div>
@@ -263,63 +284,65 @@ export default function SupportPage() {
       </div>
 
       {/* Ticket History List */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-blue-600" />
-            <span>Lịch Sử Phiếu Hỗ Trợ Đã Gửi ({tickets.length})</span>
-          </h2>
-          <button
-            onClick={() => fetchTickets()}
-            disabled={isLoadingTickets}
-            className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-slate-50"
-            title="Làm mới danh sách"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingTickets ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-
-        {tickets.length === 0 ? (
-          <p className="text-xs text-slate-400 py-4 text-center">
-            Quý khách chưa có phiếu hỗ trợ nào đang xử lý.
-          </p>
-        ) : (
-          <div className="divide-y divide-slate-100 text-xs">
-            {tickets.map((t) => (
-              <div key={t.id || t.ticketCode} className="py-3 flex items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-blue-600">{t.ticketCode}</span>
-                    <span className="text-slate-400">•</span>
-                    <span className="font-semibold text-slate-800">{t.title}</span>
-                  </div>
-                  <p className="text-slate-600 mt-1 line-clamp-2">{t.description}</p>
-                  {t.orderId && (
-                    <span className="text-[11px] font-mono text-slate-400 mt-1 block">
-                      Đơn hàng: {t.orderId}
-                    </span>
-                  )}
-                </div>
-                <div className="text-right shrink-0">
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                      t.status === 'resolved'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-amber-100 text-amber-800'
-                    }`}
-                  >
-                    {t.status || 'Đang xử lý'}
-                  </span>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 justify-end">
-                    <Clock className="w-3 h-3" />
-                    <span>{new Date(t.createdAt || Date.now()).toLocaleDateString('vi-VN')}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+      {user && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-600" />
+              <span>Lịch Sử Phiếu Hỗ Trợ Đã Gửi ({tickets.length})</span>
+            </h2>
+            <button
+              onClick={() => fetchTickets()}
+              disabled={isLoadingTickets}
+              className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-slate-50 transition"
+              title="Làm mới danh sách"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingTickets ? 'animate-spin' : ''}`} />
+            </button>
           </div>
-        )}
-      </div>
+
+          {tickets.length === 0 ? (
+            <p className="text-xs text-slate-400 py-4 text-center">
+              Quý khách chưa có phiếu hỗ trợ nào đang xử lý.
+            </p>
+          ) : (
+            <div className="divide-y divide-slate-100 text-xs">
+              {tickets.map((t) => (
+                <div key={t.id || t.ticketCode} className="py-3 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-blue-600">{t.ticketCode}</span>
+                      <span className="text-slate-400">•</span>
+                      <span className="font-semibold text-slate-800">{t.title}</span>
+                    </div>
+                    <p className="text-slate-600 mt-1 line-clamp-2">{t.description}</p>
+                    {t.orderId && (
+                      <span className="text-[11px] font-mono text-slate-400 mt-1 block">
+                        Đơn hàng: {t.orderId}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                        t.status === 'resolved'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      {t.status || 'Đang xử lý'}
+                    </span>
+                    <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 justify-end">
+                      <Clock className="w-3 h-3" />
+                      <span>{new Date(t.createdAt || Date.now()).toLocaleDateString('vi-VN')}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </BrandSectionBackground>
   );
 }

@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 from pydantic import ValidationError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.harness.tools.registry import ToolRegistry
-from agent_platform.harness.tools.spec import ToolContext, ToolUnavailableError, ConfirmedOrderStatus, ConfirmedCatalogRead, ConfirmedCartRead
+from agent_platform.harness.tools.spec import ToolContext, ToolUnavailableError, ConfirmedOrderStatus, ConfirmedCatalogRead, ConfirmedCartRead, ConfirmedInventoryRead
 from agent_platform.harness.tools.commerce_contracts import ConfirmedCommerceWrite
 from agent_platform.harness.tools.idempotency import IdempotencyManager
 from agent_platform.harness.persistence.ports import PersistenceError
@@ -327,6 +327,11 @@ class ToolExecutor:
                 commerce_answer = PIIMasker.mask(
                     f"Đơn hàng {order_id} có trạng thái {order_status}.", fail_closed=True
                 )
+        elif not tool_spec.side_effect and tool_name == "check_inventory" and isinstance(raw_output, ConfirmedInventoryRead):
+            sku = " ".join(raw_output["sku"].split())[:100]
+            store = " ".join(raw_output["store_code"].split())[:100]
+            commerce_answer = PIIMasker.mask(
+                f"Core xác nhận sản phẩm {sku} còn {raw_output['available_qty']} tại cửa hàng {store}.", fail_closed=True)
         elif not tool_spec.side_effect and isinstance(raw_output, ConfirmedCatalogRead):
             if "total_matched" in raw_output and "items" in raw_output:
                 products, count, price_field = raw_output["items"], raw_output["total_matched"], "price_vnd"
@@ -337,13 +342,26 @@ class ToolExecutor:
             else:
                 products, count, price_field = [], 0, ""
             if price_field:
-                lines = [f"Core xác nhận {count} sản phẩm."]
-                for product in products[:10]:
+                low_price = raw_output.get("prefer_low_price") is True
+                limit = 3 if low_price else 10
+                money = lambda value: f"{int(value):,}".replace(",", ".")
+                if not count:
+                    lines = ["Hiện chưa tìm thấy sản phẩm phù hợp với bộ lọc này."]
+                    if raw_output.get("max_price_vnd") is not None:
+                        lines.append(f"Mức giá đang lọc: không quá {money(raw_output['max_price_vnd'])} VNĐ.")
+                    lines.append("Bạn muốn tìm trong khoảng ngân sách nào, hoặc có thể thay đổi yêu cầu cấu hình không?")
+                elif low_price:
+                    lines = ["Mình gợi ý các mẫu có giá thấp nhất trong kết quả tìm kiếm hiện tại:"]
+                else:
+                    lines = [f"Mình tìm được {count} sản phẩm phù hợp:"]
+                for product in products[:limit]:
                     name = " ".join(product["name"].split())[:200]
                     sku = " ".join(product["sku"].split())[:100]
-                    lines.append(f"{sku}: {name} — {product[price_field]} VNĐ.")
-                if count > 10:
-                    lines.append(f"Hiển thị 10 trong {count} sản phẩm.")
+                    lines.append(f"{sku}: {name} — {money(product[price_field])} VNĐ.")
+                if count > limit:
+                    lines.append(f"Đang gợi ý {limit} trong {count} sản phẩm phù hợp.")
+                if low_price and count:
+                    lines.append(raw_output.get("follow_up_question") or "Bạn dự định chi khoảng bao nhiêu và có yêu cầu gì thêm?")
                 commerce_answer = PIIMasker.mask("\n".join(lines), fail_closed=True)
         elif not tool_spec.side_effect and tool_name == "view_cart" and isinstance(raw_output, ConfirmedCartRead):
             items = raw_output["items"]

@@ -85,7 +85,7 @@ def test_guest_cannot_get_order_status_fact(graph_setup):
 
 
 @pytest.mark.parametrize('name,args,response,expected', [
-    ('lookup_laptop_catalog', {}, {'count': 0, 'laptops': []}, 'Core xác nhận 0 sản phẩm.'),
+    ('lookup_laptop_catalog', {}, {'count': 0, 'laptops': []}, 'Hiện chưa tìm thấy sản phẩm phù hợp với bộ lọc này.'),
     ('lookup_laptop_catalog', {}, {'count': 1, 'laptops': [{'sku': 'ABC', 'name': 'Laptop A', 'price_vnd': '100'}]}, 'ABC: Laptop A — 100 VNĐ.'),
     ('get_product_details', {'sku': 'ABC'}, {'sku': 'ABC', 'name': 'Laptop A', 'priceVnd': '100'}, 'ABC: Laptop A — 100 VNĐ.'),
     ('compare_products', {'skus': ['ABC', 'DEF']}, {'total': 2, 'comparison': [{'sku': 'ABC', 'name': 'A', 'priceVnd': '100'}, {'sku': 'DEF', 'name': 'B', 'priceVnd': '200'}]}, 'DEF: B — 200 VNĐ.'),
@@ -102,6 +102,24 @@ def test_catalog_results_are_rendered_by_server(graph_setup, monkeypatch, name, 
     assert state['status'] == 'done' and state['grounding_status'] == 'verified_commerce'
     assert expected in state['final_answer'] and 'không có căn cứ' not in state['final_answer']
     assert len(llm.history_calls) == 1 and state['matched_evidence'] == []
+
+
+@pytest.mark.parametrize('sku,store_code,status', [('ABC', 'MWG_HCM_001', 'done'), ('OTHER', 'MWG_HCM_001', 'abstained'), ('ABC', 'OTHER', 'abstained')])
+def test_inventory_requires_matching_product_and_store(graph_setup, monkeypatch, sku, store_code, status):
+    pack, registry, domain = graph_setup
+    async def core(*unused, **kwargs):
+        return {'sku': sku, 'store_id': 'store-1', 'store_code': store_code, 'available_qty': 2,
+                'reservation_guarantee': 'not verified'}
+    monkeypatch.setitem(registry.get('check_inventory').func.__globals__, '_call_nestjs_tool', core)
+    llm = ScriptedLLM()
+    llm.queue_tool_call('check_inventory', {'sku': 'ABC'}, 'inventory-call')
+    llm.queue_answer('Bịa kết quả.')
+    runner = AgentRunner(build_agent_graph(pack, llm, registry, ToolExecutor(registry, PolicyEngine.load_from_file(domain / 'policies.yaml'))))
+    state = asyncio.run(runner.execute('Còn hàng không?', Principal(user_id='guest', role='guest')))
+    assert state['status'] == status and state['matched_evidence'] == []
+    if status == 'done':
+        assert 'ABC còn 2' in state['final_answer'] and 'not verified' not in state['final_answer']
+        assert len(llm.history_calls) == 1
 
 
 @pytest.mark.parametrize('customer_id,total_vnd,expected_status', [('alice', '220', 'done'), ('bob', '220', 'abstained'), ('alice', '221', 'abstained')])

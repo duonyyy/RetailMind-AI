@@ -23,6 +23,7 @@ export interface OrderPreviewResponse {
 }
 
 export interface ConfirmOrderPayload {
+  fromCart?: boolean;
   storeId: string;
   items: Array<{ sku: string; quantity: number }>;
   discountCode?: string;

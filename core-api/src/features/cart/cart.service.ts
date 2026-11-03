@@ -48,6 +48,13 @@ export class CartService {
     return this.db().getRepository(CartItem);
   }
 
+  private inCartTransaction<T>(customerId: string, execute: (manager: EntityManager) => Promise<T>): Promise<T> {
+    return this.db().transaction(async manager => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`cart:${customerId}`]);
+      return execute(manager);
+    });
+  }
+
   async getOrCreateActiveCart(customerId: string, manager?: EntityManager): Promise<Cart> {
     if (!customerId || !customerId.trim()) {
       throw new BadRequestException('Mã khách hàng là bắt buộc để quản lý giỏ hàng.');
@@ -71,11 +78,13 @@ export class CartService {
   }
 
   async getCart(customerId: string, storeId?: string, manager?: EntityManager): Promise<CartDTO> {
+    if (!manager) return this.inCartTransaction(customerId, tx => this.getCart(customerId, storeId, tx));
     const cart = await this.getOrCreateActiveCart(customerId, manager);
     return this.mapCartToDto(cart, storeId, manager);
   }
 
   async addItem(customerId: string, dto: AddToCartDTO, manager?: EntityManager): Promise<CartDTO> {
+    if (!manager) return this.inCartTransaction(customerId, tx => this.addItem(customerId, dto, tx));
     if (!dto?.sku || !dto.sku.trim()) {
       throw new BadRequestException('Mã SKU sản phẩm không được để trống.');
     }
@@ -85,7 +94,8 @@ export class CartService {
     }
 
     const cart = await this.getOrCreateActiveCart(customerId, manager);
-    const targetStoreId = dto.storeId?.trim() || '10000000-0000-0000-0000-000000000001';
+    const targetStoreId = dto.storeId?.trim();
+    if (!targetStoreId) throw new BadRequestException('Cần chọn cửa hàng trước khi thêm sản phẩm vào giỏ hàng.');
     const currentManager = manager || this.db().manager;
     const store = await this.inventoryService.resolveStore(currentManager, targetStoreId);
     const variant = await this.inventoryService.resolveVariant(currentManager, dto.sku.trim());
@@ -135,7 +145,9 @@ export class CartService {
     sku: string,
     quantity: number,
     storeId?: string,
+    manager?: EntityManager,
   ): Promise<CartDTO> {
+    if (!manager) return this.inCartTransaction(customerId, tx => this.updateItemQuantity(customerId, sku, quantity, storeId, tx));
     if (!sku || !sku.trim()) {
       throw new BadRequestException('Mã SKU không được để trống.');
     }
@@ -143,17 +155,18 @@ export class CartService {
       throw new BadRequestException('Số lượng sản phẩm phải là số nguyên dương lớn hơn 0.');
     }
 
-    const cart = await this.getOrCreateActiveCart(customerId);
-    const variant = await this.inventoryService.resolveVariant(this.db().manager, sku.trim());
+    const cart = await this.getOrCreateActiveCart(customerId, manager);
+    const variant = await this.inventoryService.resolveVariant(manager, sku.trim());
 
     const existingItem = (cart.items || []).find((i) => i.variantId === variant.id);
     if (!existingItem) {
       throw new NotFoundException(`Không tìm thấy sản phẩm với SKU "${sku}" trong giỏ hàng.`);
     }
 
-    const targetStoreId = storeId?.trim() || '10000000-0000-0000-0000-000000000001';
-    const store = await this.inventoryService.resolveStore(this.db().manager, targetStoreId);
-    const stock = await this.inventoryService.getStock(store.id, variant.id);
+    const targetStoreId = storeId?.trim();
+    if (!targetStoreId) throw new BadRequestException('Cần chọn cửa hàng trước khi cập nhật số lượng.');
+    const store = await this.inventoryService.resolveStore(manager, targetStoreId);
+    const stock = await this.inventoryService.getStock(store.id, variant.id, manager);
 
     if (quantity > stock.availableQty) {
       throw new ConflictException(
@@ -162,12 +175,13 @@ export class CartService {
     }
 
     existingItem.quantity = quantity;
-    await this.getCartItemRepo().save(existingItem);
+    await manager.getRepository(CartItem).save(existingItem);
 
-    return this.getCart(customerId, store.id);
+    return this.getCart(customerId, store.id, manager);
   }
 
   async removeItem(customerId: string, sku: string, storeId?: string, manager?: EntityManager): Promise<CartDTO> {
+    if (!manager) return this.inCartTransaction(customerId, tx => this.removeItem(customerId, sku, storeId, tx));
     if (!sku || !sku.trim()) {
       throw new BadRequestException('Mã SKU không được để trống.');
     }
@@ -192,10 +206,11 @@ export class CartService {
       }));
   }
 
-  async clearCart(customerId: string): Promise<void> {
-    const cart = await this.getOrCreateActiveCart(customerId);
+  async clearCart(customerId: string, manager?: EntityManager): Promise<void> {
+    if (!manager) return this.inCartTransaction(customerId, tx => this.clearCart(customerId, tx));
+    const cart = await this.getOrCreateActiveCart(customerId, manager);
     if (cart.items?.length) {
-      await this.getCartItemRepo().delete({ cartId: cart.id });
+      await manager.getRepository(CartItem).delete({ cartId: cart.id });
     }
   }
 
@@ -204,7 +219,9 @@ export class CartService {
     let subtotal = new Decimal(0);
     const mappedItems: CartItemDTO[] = [];
 
-    const targetStoreId = storeId?.trim() || '10000000-0000-0000-0000-000000000001';
+    const store = storeId?.trim()
+      ? await this.inventoryService.resolveStore(manager || this.db().manager, storeId.trim())
+      : null;
 
     for (const item of items) {
       let variantName = item.variant?.name;
@@ -222,12 +239,10 @@ export class CartService {
       const lineTotal = unitPrice.times(item.quantity);
       subtotal = subtotal.plus(lineTotal);
 
-      let availableStock = 0;
-      try {
-        const stock = await this.inventoryService.getStock(targetStoreId, item.variantId, manager);
+      let availableStock: number | null = null;
+      if (store) {
+        const stock = await this.inventoryService.getStock(store.id, item.variantId, manager);
         availableStock = stock.availableQty;
-      } catch {
-        availableStock = 0;
       }
 
       mappedItems.push({
@@ -241,7 +256,7 @@ export class CartService {
         lineTotalVnd: lineTotal.toString(),
         formattedLineTotal: `${new Intl.NumberFormat('vi-VN').format(BigInt(lineTotal.toFixed(0)))} ₫`,
         availableStock,
-        inStock: availableStock >= item.quantity,
+        inStock: availableStock === null ? null : availableStock >= item.quantity,
       });
     }
 
@@ -249,6 +264,7 @@ export class CartService {
     const total = subtotal.plus(vat);
 
     return {
+      storeId: store?.id ?? null,
       id: cart.id,
       customerId: cart.customerId,
       status: cart.status,
@@ -260,6 +276,17 @@ export class CartService {
       formattedTotal: `${new Intl.NumberFormat('vi-VN').format(BigInt(total.toFixed(0)))} ₫`,
       updatedAt: (cart.updatedAt || new Date()).toISOString(),
     };
+  }
+
+  async consumeCheckoutCart(customerId: string, items: Array<{ sku: string; quantity: number }>, manager: EntityManager): Promise<void> {
+    await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`cart:${customerId}`]);
+    const cart = await this.getOrCreateActiveCart(customerId, manager);
+    const current = (cart.items || []).map(i => ({ sku: i.variant?.sku, quantity: i.quantity })).sort((a, b) => String(a.sku).localeCompare(String(b.sku)));
+    const expected = items.map(i => ({ sku: i.sku, quantity: i.quantity })).sort((a, b) => a.sku.localeCompare(b.sku));
+    if (!current.length || JSON.stringify(current) !== JSON.stringify(expected)) {
+      throw new ConflictException('Giỏ hàng đã thay đổi. Vui lòng tải lại và xác nhận đơn hàng.');
+    }
+    await manager.getRepository(CartItem).delete({ cartId: cart.id });
   }
 }
 

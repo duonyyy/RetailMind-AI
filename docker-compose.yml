@@ -110,7 +110,9 @@ services:
       - NESTJS_BACKEND_URL=http://backend:4000
       - CORE_API_URL=http://backend:4000
       - INTERNAL_TOOL_SECRET=${INTERNAL_TOOL_SECRET:?INTERNAL_TOOL_SECRET is required}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-mock_key}
+      - LLM_PROVIDER=${LLM_PROVIDER:-scripted}
+      - LLM_MODEL=${LLM_MODEL:-dev-scripted}
+      - LLM_API_KEY=${LLM_API_KEY:-}
       - PERSISTENCE_ADAPTER=${PERSISTENCE_ADAPTER:-postgres}
       - AGENT_POSTGRES_SCHEMA=${AGENT_POSTGRES_SCHEMA:-agent}
       - AGENT_POSTGRES_URL=postgresql://${AGENT_DB_RUNTIME_USER:-retailmind_agent_runtime}:${DB_APP_PASSWORD:?DB_APP_PASSWORD is required}@postgres:5432/retailmind_db?options=-csearch_path%3Dagent

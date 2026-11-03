@@ -35,11 +35,12 @@ export interface CartItemDTO {
   quantity: number;
   lineTotalVnd: string;
   formattedLineTotal: string;
-  availableStock: number;
-  inStock: boolean;
+  availableStock: number | null;
+  inStock: boolean | null;
 }
 
 export interface CartDTO {
+  storeId: string | null;
   id: string;
   customerId: string;
   status: string;

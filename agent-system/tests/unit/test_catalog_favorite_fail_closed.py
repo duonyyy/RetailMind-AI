@@ -76,6 +76,66 @@ def test_empty_catalog_is_a_confirmed_empty_result(registry, monkeypatch):
     assert not result.is_error and '"total_matched": 0' in result.output
 
 
+def test_low_price_preference_does_not_invent_a_budget_and_shows_three_cheapest(registry, monkeypatch):
+    seen = []
+    async def backend(endpoint, payload, *unused, **kwargs):
+        seen.append(payload)
+        return {'count': 4, 'laptops': [
+            {'sku': 'SKU-D', 'name': 'D', 'price_vnd': '4000000'},
+            {'sku': 'SKU-B', 'name': 'B', 'price_vnd': '2000000'},
+            {'sku': 'SKU-C', 'name': 'C', 'price_vnd': '3000000'},
+            {'sku': 'SKU-A', 'name': 'A', 'price_vnd': '1000000'},
+        ]}
+    monkeypatch.setitem(registry.get('lookup_laptop_catalog').func.__globals__, '_call_nestjs_tool', backend)
+    result, _ = run_tool(registry, 'lookup_laptop_catalog', {'prefer_low_price': True})
+    assert not result.is_error
+    assert seen[0]['max_price_vnd'] is None and seen[0]['min_price_vnd'] is None and seen[0]['query'] is None
+    answer = result.commerce_answer
+    assert answer.index('SKU-A') < answer.index('SKU-B') < answer.index('SKU-C')
+    assert 'SKU-D' not in answer and '1.000.000 VNĐ' in answer
+    assert 'Bạn dự định chi khoảng bao nhiêu' in answer
+
+
+def test_empty_budget_result_explains_filter_and_asks_for_alternatives(registry, monkeypatch):
+    async def backend(*unused, **kwargs): return {'count': 0, 'laptops': []}
+    monkeypatch.setitem(registry.get('lookup_laptop_catalog').func.__globals__, '_call_nestjs_tool', backend)
+    result, _ = run_tool(registry, 'lookup_laptop_catalog', {'max_price': '10000000'})
+    assert not result.is_error
+    assert '10.000.000 VNĐ' in result.commerce_answer
+    assert 'ngân sách' in result.commerce_answer and 'Core xác nhận 0' not in result.commerce_answer
+
+
+@pytest.mark.parametrize('name,args,payload', [
+    ('lookup_laptop_catalog', {}, {'count': 1, 'laptops': [{'sku': 'ABC', 'name': 'A', 'price_vnd': '100', 'ram_gb': 16, 'in_stock': True, 'highlights': ['24 tháng']}]}),
+    ('get_product_details', {'sku': 'ABC'}, {'sku': 'ABC', 'name': 'A', 'priceVnd': '100', 'cpuModel': 'fabricated-cpu', 'inStock': True, 'highlights': ['fabricated-warranty']}),
+    ('compare_products', {'skus': ['ABC', 'DEF']}, {'total': 2, 'comparison': [{'sku': 'ABC', 'name': 'A', 'priceVnd': '100', 'storageGb': 512}, {'sku': 'DEF', 'name': 'B', 'priceVnd': '200', 'gpuModel': 'fabricated-gpu'}]}),
+])
+def test_catalog_does_not_expose_unverified_specifications(registry, monkeypatch, name, args, payload):
+    async def backend(*unused, **kwargs): return payload
+    monkeypatch.setitem(registry.get(name).func.__globals__, '_call_nestjs_tool', backend)
+    result, _ = run_tool(registry, name, args)
+    assert not result.is_error
+    for forbidden in ('ram_gb', 'cpuModel', 'storageGb', 'gpuModel', 'in_stock', 'inStock', 'highlights', '24 tháng', 'fabricated'):
+        assert forbidden not in result.output
+
+
+@pytest.mark.parametrize('name,args,response', [
+    ('check_inventory', {'sku': 'LAP-ASUS-VIVO15'}, {'sku': 'LAP-ASUS-VIVO15', 'store_id': 'store-1', 'store_code': 'MWG_HCM_001', 'available_qty': 2, 'reservation_guarantee': 'unverified'}),
+    ('add_to_cart', {'sku': 'LAP-ASUS-VIVO15'}, {'status': 'success', 'cart': {'customer_id': 'alice', 'items': []}}),
+    ('remove_from_cart', {'sku': 'LAP-ASUS-VIVO15'}, {'status': 'success', 'cart': {'customer_id': 'alice', 'items': []}}),
+])
+def test_product_identifier_is_forwarded_without_local_alias_substitution(registry, monkeypatch, name, args, response):
+    requests = []
+    async def backend(endpoint, payload, ctx):
+        requests.append(payload)
+        return response
+    monkeypatch.setitem(registry.get(name).func.__globals__, '_call_nestjs_tool', backend)
+    result, _ = run_tool(registry, name, args)
+    assert not result.is_error
+    assert requests[0]['sku'] == args['sku'] and requests[0]['variant_id'] == args['sku']
+    assert 'reservation_guarantee' not in result.output
+
+
 @pytest.mark.parametrize('name,args,payload', [
     ('get_product_details', {'sku': 'variant-1'}, {'id': 'variant-1', 'sku': 'ABC', 'name': 'A', 'priceVnd': '100'}),
     ('compare_products', {'skus': ['variant-1', 'DEF']}, {'total': 2, 'comparison': [

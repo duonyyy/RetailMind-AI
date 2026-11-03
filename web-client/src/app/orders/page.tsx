@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { BrandSectionBackground } from '@/components/patterns';
 import { apiFetch } from '@/lib/api-client';
 import { formatVND } from '@/lib/utils';
+import { useCurrentUser } from '@/features/auth/useCurrentUser';
 import {
   PackageCheck,
   Search,
@@ -16,6 +17,7 @@ import {
   Database,
   ArrowRight,
   AlertCircle,
+  LogIn,
 } from 'lucide-react';
 
 interface OrderRecord {
@@ -53,16 +55,29 @@ export default function OrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [cancellingNo, setCancellingNo] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const { user, isLoading: isAuthLoading } = useCurrentUser();
+  const [isUnauthorized, setIsUnauthorized] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchOrders = async () => {
     setIsLoading(true);
+    setLoadError(null);
+    setIsUnauthorized(false);
     try {
-      const res = await apiFetch<any>('orders', { retries: 1 });
+      const res = await apiFetch<any>('orders', { retries: 0 });
+      if (!res.success) {
+        if (res.error?.code === 'HTTP_401' || res.error?.code === 'UNAUTHORIZED') {
+          setIsUnauthorized(true);
+          setOrders([]);
+          return;
+        }
+        throw new Error(res.error?.message || 'Không thể tải lịch sử đơn hàng.');
+      }
       if (res.success && res.data) {
         const rawList = res.data?.orders || (Array.isArray(res.data) ? res.data : []);
         const mapped: OrderRecord[] = rawList.map((o: any) => {
           const rawStatus = String(o.status || 'placed').toLowerCase();
-          let status: OrderRecord['status'] = 'CONFIRMED';
+          let status: OrderRecord['status'] = 'PLACED';
           let stepIndex = 2;
 
           if (rawStatus === 'completed') {
@@ -77,9 +92,10 @@ export default function OrdersPage() {
           } else if (rawStatus === 'cancelled') {
             status = 'CANCELLED';
             stepIndex = 0;
+          } else if (rawStatus === 'confirmed') {
+            status = 'CONFIRMED'; stepIndex = 2;
           } else {
-            status = 'CONFIRMED';
-            stepIndex = 2;
+            status = 'PLACED'; stepIndex = 0;
           }
 
           const createdDate = new Date(o.confirmedAt || o.created_at || Date.now());
@@ -94,28 +110,36 @@ export default function OrdersPage() {
             orderId: o.orderId || o.id,
             orderNo: o.orderNo || o.order_no,
             productName: firstItem?.name || firstItem?.title_snapshot || 'Laptop MWG Chính Hãng',
-            sku: firstItem?.sku || firstItem?.sku_snapshot || 'MWG-LAPTOP',
+            sku: firstItem?.sku || firstItem?.sku_snapshot || 'Chưa có thông tin',
             branch: STORE_MAP[o.storeId] || o.storeId || '136 Nguyễn Thái Học, Q.1, TP.HCM',
             totalAmount: o.formattedTotal || formatVND(o.totalVnd || '0'),
             status,
             stepIndex,
             orderDate: createdDate.toLocaleString('vi-VN'),
-            warrantyUntil: warrantyDate.toISOString().slice(0, 10),
-            returnEligibleUntil: `${returnDate.toISOString().slice(0, 10)} (Đổi mới 30 ngày)`,
+            warrantyUntil: 'Cần xác minh chính sách sản phẩm',
+            returnEligibleUntil: 'Cần xác minh chính sách đổi trả',
           };
         });
         setOrders(mapped);
       }
-    } catch {
-      // Ignored
+    } catch (e) {
+      setOrders([]);
+      setLoadError(e instanceof Error ? e.message : 'Lỗi kết nối khi tải danh sách đơn hàng.');
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    if (!isAuthLoading) {
+      if (!user) {
+        setIsUnauthorized(true);
+        setIsLoading(false);
+      } else {
+        fetchOrders();
+      }
+    }
+  }, [user, isAuthLoading]);
 
   const handleCancelOrder = async (orderId: string, orderNo: string) => {
     if (!confirm(`Quý khách có chắc chắn muốn hủy đơn hàng ${orderNo}? Hệ thống sẽ giải phóng tồn kho ngay lập tức.`)) {
@@ -172,12 +196,12 @@ export default function OrdersPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <PackageCheck className="w-5 h-5 text-blue-600" />
-            <span>Lịch Sử Đơn Hàng &amp; Theo Dõi Vận Chuyển 5 Bước (SCR-10 • UC04)</span>
+            <span>Lịch Sử Đơn Hàng Của Tôi</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
             <Database className="w-3.5 h-3.5 text-blue-600" />
             <span>
-              Dữ liệu trực tiếp từ PostgreSQL 16+ (Chống IDOR). Hủy đơn thực thi ACID hoàn kho tức thì.
+              Theo dõi tiến độ đơn hàng, thông tin bảo hành và hỗ trợ đổi trả.
             </span>
           </p>
         </div>
@@ -258,12 +282,38 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      {loadError && (
+        <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800 flex items-center justify-between">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => fetchOrders()} className="font-bold underline">Thử lại</button>
+        </div>
+      )}
+
       {/* Orders List with 5-Step Stepper */}
       <div className="space-y-4">
-        {isLoading && orders.length === 0 ? (
+        {isUnauthorized ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto">
+              <LogIn className="w-7 h-7" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-slate-800">Vui lòng đăng nhập tài khoản</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Để xem và theo dõi tiến độ đơn hàng của bạn, vui lòng đăng nhập tài khoản khách hàng.
+              </p>
+            </div>
+            <Link
+              href="/login?redirect=/orders"
+              className="ts-cta text-xs py-2.5 px-5 inline-flex items-center gap-1.5"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Đăng nhập ngay</span>
+            </Link>
+          </div>
+        ) : isLoading && orders.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
             <RefreshCw className="w-6 h-6 animate-spin text-blue-600 mx-auto" />
-            <p className="text-xs text-slate-500">Đang tải lịch sử đơn hàng từ PostgreSQL SSOT...</p>
+            <p className="text-xs text-slate-500">Đang tải lịch sử đơn hàng...</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
@@ -383,7 +433,7 @@ export default function OrdersPage() {
                     ) : (
                       <XCircle className="w-3.5 h-3.5" />
                     )}
-                    <span>Hủy đơn &amp; Hoàn kho (ACID)</span>
+                    <span>Hủy đơn hàng</span>
                   </button>
                 )}
               </div>

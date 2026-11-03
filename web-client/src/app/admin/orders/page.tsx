@@ -8,10 +8,10 @@ import {
   ShoppingBag,
   Search,
   CheckCircle2,
-  Truck,
   ShieldCheck,
   RefreshCw,
   Database,
+  Truck,
 } from 'lucide-react';
 
 interface AdminOrderRow {
@@ -37,15 +37,17 @@ const STORE_MAP: Record<string, string> = {
 export default function AdminOrdersOmsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [orders, setOrders] = useState<AdminOrderRow[]>([]);
+  const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchOrders = async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const res = await apiFetch<any>('admin/orders', { retries: 1 });
       if (res.success && res.data) {
         const rawList = res.data?.orders || (Array.isArray(res.data) ? res.data : []);
-        if (rawList.length > 0) {
+        if (Array.isArray(rawList)) {
           const mapped: AdminOrderRow[] = rawList.map((o: any) => {
             const firstItem = o.items?.[0];
             const rawStatus = String(o.status || 'placed').toUpperCase();
@@ -63,13 +65,13 @@ export default function AdminOrdersOmsPage() {
             return {
               orderId: o.orderId || o.id,
               orderNo: o.orderNo || o.order_no,
-              customerName: o.customerName || (o.customerId ? `Khách hàng #${o.customerId.slice(0, 8)}` : 'Trần Minh Đức'),
-              phoneMasked: '0908***812',
-              sku: firstItem?.sku || firstItem?.sku_snapshot || 'LT-ASUS-VIVO15',
+              customerName: o.customerName || (o.customerId ? `Khách hàng #${o.customerId.slice(0, 8)}` : 'Chưa có thông tin'),
+              phoneMasked: 'Chưa có thông tin',
+              sku: firstItem?.sku || firstItem?.sku_snapshot || 'Chưa có thông tin',
               productName: firstItem?.name || firstItem?.title_snapshot || 'Laptop Chính Hãng',
               branchCode: STORE_MAP[o.storeId] || o.storeId || 'MWG_HCM_001',
               totalFormatted: o.formattedTotal || formatVND(o.totalVnd || '0'),
-              idempotencyKey: o.idempotencyKey || `idem-${(o.orderNo || '').slice(-6)}`,
+              idempotencyKey: o.idempotencyKey || 'Chưa có thông tin',
               status,
               createdAt: new Date(o.confirmedAt || o.created_at || Date.now()).toLocaleString('vi-VN'),
             };
@@ -84,67 +86,13 @@ export default function AdminOrdersOmsPage() {
       setIsLoading(false);
     }
 
-    // Default baseline fallback
-    setOrders([
-      {
-        orderId: '00000000-0000-0000-0000-000000000001',
-        orderNo: 'MWG-20261027-9812',
-        customerName: 'Trần Minh Đức',
-        phoneMasked: '0908***812',
-        sku: 'LT-ASUS-VIVO15-OLED',
-        productName: 'Asus Vivobook 15 OLED A1505VA',
-        branchCode: 'MWG_HCM_001',
-        totalFormatted: '19.239.000 ₫',
-        idempotencyKey: 'idem-20261027-a8f19c',
-        status: 'PLACED',
-        createdAt: '2026-10-27 10:15',
-      },
-      {
-        orderId: '00000000-0000-0000-0000-000000000002',
-        orderNo: 'MWG-20261027-9811',
-        customerName: 'Lê Thu Hà',
-        phoneMasked: '0912***409',
-        sku: 'LT-LENOVO-TB14-G6',
-        productName: 'Lenovo ThinkBook 14 G6+ AI PC',
-        branchCode: 'MWG_HN_002',
-        totalFormatted: '21.439.000 ₫',
-        idempotencyKey: 'idem-20261027-b3c90d',
-        status: 'CONFIRMED',
-        createdAt: '2026-10-27 09:40',
-      },
-    ]);
+    setLoadError('Không thể tải dữ liệu từ Core API. Vui lòng thử lại.');
+    setOrders([]);
   };
 
   useEffect(() => {
     fetchOrders();
   }, []);
-
-  const advanceOrderStatus = async (orderId: string, orderNo: string, currentStatus: AdminOrderRow['status']) => {
-    if (currentStatus === 'SHIPPING') {
-      try {
-        await apiFetch(`orders/${orderId || orderNo}/simulate-payment`, {
-          method: 'POST',
-          retries: 0,
-        });
-      } catch {
-        // Fallback
-      }
-    }
-
-    const nextMap: Record<AdminOrderRow['status'], AdminOrderRow['status']> = {
-      PLACED: 'CONFIRMED',
-      CONFIRMED: 'SHIPPING',
-      SHIPPING: 'COMPLETED',
-      COMPLETED: 'COMPLETED',
-      CANCELLED: 'CANCELLED',
-    };
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.orderNo === orderNo ? { ...o, status: nextMap[o.status] } : o
-      )
-    );
-  };
 
   const filtered = orders.filter(
     (o) =>
@@ -162,16 +110,22 @@ export default function AdminOrdersOmsPage() {
       withGlow={true}
       className="min-h-full p-6 sm:p-8 space-y-6"
     >
+      {loadError && (
+        <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800">
+          {loadError}
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <ShoppingBag className="w-5 h-5 text-blue-600" />
-            <span>Quản Lý Đơn Hàng &amp; Điều Phối Kho — OMS Hub (SCR-17 • UC03/UC04)</span>
+            <span>Quản Lý Đơn Hàng (OMS Hub)</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
             <Database className="w-3.5 h-3.5 text-blue-600" />
             <span>
-              Đối soát khóa chống trùng lặp Idempotency-Key, kiểm tra snapshot giá lúc mua và điều phối xuất kho siêu thị.
+              Theo dõi đối soát khóa chống trùng lặp Idempotency-Key và danh sách đơn hàng toàn sàn từ Core API.
             </span>
           </p>
         </div>
@@ -199,7 +153,7 @@ export default function AdminOrdersOmsPage() {
           />
         </div>
         <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-          <ShieldCheck className="w-4 h-4" /> Anti-Oversell Active
+          <ShieldCheck className="w-4 h-4" /> Bảo vệ tồn kho khả dụng
         </span>
       </div>
 
@@ -210,7 +164,7 @@ export default function AdminOrdersOmsPage() {
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase">
               <tr>
                 <th className="py-3.5 px-4">Mã Đơn &amp; Thời Gian</th>
-                <th className="py-3.5 px-4">Khách Hàng (PII Masked)</th>
+                <th className="py-3.5 px-4">Khách Hàng</th>
                 <th className="py-3.5 px-4">Sản Phẩm &amp; Kho Xuất</th>
                 <th className="py-3.5 px-4">Idempotency Key</th>
                 <th className="py-3.5 px-4">Tổng Tiền</th>
@@ -219,6 +173,13 @@ export default function AdminOrdersOmsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
+              {!isLoading && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-500">
+                    Chưa có đơn hàng nào phù hợp với bộ lọc tìm kiếm.
+                  </td>
+                </tr>
+              )}
               {filtered.map((ord) => (
                 <tr key={ord.orderNo} className="hover:bg-slate-50/80">
                   <td className="py-3.5 px-4">
@@ -252,26 +213,22 @@ export default function AdminOrdersOmsPage() {
                       {ord.status}
                     </span>
                   </td>
-                  <td className="py-3.5 px-4 text-right">
-                    {ord.status !== 'COMPLETED' && ord.status !== 'CANCELLED' ? (
-                      <button
-                        type="button"
-                        onClick={() => advanceOrderStatus(ord.orderId, ord.orderNo, ord.status)}
-                        className="ts-cta py-1.5 px-3 text-[11px] font-bold inline-flex items-center gap-1"
-                      >
-                        <Truck className="w-3 h-3" />
-                        <span>
-                          {ord.status === 'PLACED'
-                            ? 'Xác nhận kho'
-                            : ord.status === 'CONFIRMED'
-                            ? 'Xuất kho giao'
-                            : 'Hoàn tất đơn'}
-                        </span>
-                      </button>
-                    ) : (
+                  <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                    {ord.status === 'COMPLETED' ? (
                       <span className="text-emerald-700 font-bold inline-flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{ord.status === 'COMPLETED' ? 'Đã tất toán' : 'Đã hủy hoàn kho'}</span>
+                        <span>Đã tất toán</span>
+                      </span>
+                    ) : ord.status === 'CANCELLED' ? (
+                      <span className="text-rose-600 font-bold inline-flex items-center gap-1">
+                        <span>Đã hủy đơn</span>
+                      </span>
+                    ) : (
+                      <span
+                        className="text-[11px] text-slate-400 italic font-medium"
+                        title="Core API hiện chưa hỗ trợ endpoint chuyển trạng thái vận chuyển"
+                      >
+                        Chuyển trạng thái: Chưa hỗ trợ
                       </span>
                     )}
                   </td>

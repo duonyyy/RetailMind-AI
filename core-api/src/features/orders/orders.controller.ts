@@ -77,8 +77,10 @@ export class OrdersController {
   async simulatePayment(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('idempotency-key') key?: string,
   ) {
-    return this.ordersService.simulatePayment(id, user);
+    if (!key) throw new BadRequestException('Bắt buộc cung cấp Idempotency-Key để thanh toán mô phỏng.');
+    return this.ordersService.simulatePayment(id, user, key);
   }
 }
 

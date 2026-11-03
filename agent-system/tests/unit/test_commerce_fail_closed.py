@@ -84,7 +84,7 @@ def test_failed_read_is_not_evidence_and_stops_workflow(registry, monkeypatch):
 
 def test_zero_stock_is_valid_and_not_an_error(registry, monkeypatch):
     spec = registry.get("check_inventory")
-    async def backend(*args, **kwargs): return {"available_qty": 0}
+    async def backend(*args, **kwargs): return {"sku": "ABC", "store_id": "store-1", "store_code": "MWG_HCM_001", "available_qty": 0}
     monkeypatch.setitem(spec.func.__globals__, "_call_nestjs_tool", backend)
     executor = ToolExecutor(registry, PolicyEngine.load_from_file("domains/retail_store/policies.yaml"))
     async def run():

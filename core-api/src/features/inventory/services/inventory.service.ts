@@ -114,9 +114,12 @@ export class InventoryService {
     for (const item of [...items].sort((a, b) => a.variantId.localeCompare(b.variantId))) {
       const inventory = await queryRunner.manager.createQueryBuilder(Inventory, 'inv').setLock('pessimistic_write')
         .where('inv.store_id = :storeId AND inv.variant_id = :variantId', { storeId: store.id, variantId: item.variantId }).getOne();
-      if (inventory) {
-        inventory.reserved_qty = Math.max(0, inventory.reserved_qty - item.quantity);
-        inventory.on_hand_qty = Math.max(0, inventory.on_hand_qty - item.quantity);
+      if (!inventory || !Number.isSafeInteger(item.quantity) || item.quantity < 1 || inventory.reserved_qty < item.quantity || inventory.on_hand_qty < item.quantity) {
+        throw new ConflictException('Không thể xác nhận tồn kho đã giữ cho thanh toán.');
+      }
+      {
+        inventory.reserved_qty -= item.quantity;
+        inventory.on_hand_qty -= item.quantity;
         await queryRunner.manager.save(inventory);
       }
     }

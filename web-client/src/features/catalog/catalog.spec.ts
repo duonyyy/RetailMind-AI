@@ -28,14 +28,15 @@ describe('Catalog Data Adapter & Multi-Faceted Filters (SCR-03)', () => {
     expect(product.priceVnd).toBe('17990000');
     expect(product.formattedPrice).toContain('17.990.000');
     expect(product.useCase).toBe('OFFICE');
-    expect(product.branches.length).toBeGreaterThan(0);
-    expect(product.totalAvailableStock).toBeGreaterThan(0);
+    expect(product.branches).toEqual([]);
+    expect(product.totalAvailableStock).toBe(0);
   });
 
   it('should classify use case correctly based on brand and GPU', () => {
     const gaming = mapDtoToLaptopProduct({
       sku: 'LT-ROG-G16',
       name: 'Asus ROG Strix G16',
+      priceVnd: '100',
       brand: 'ASUS',
       gpuModel: 'NVIDIA RTX 4060',
     });
@@ -44,6 +45,7 @@ describe('Catalog Data Adapter & Multi-Faceted Filters (SCR-03)', () => {
     const apple = mapDtoToLaptopProduct({
       sku: 'LT-MBA-M2',
       name: 'MacBook Air M2',
+      priceVnd: '100',
       brand: 'APPLE',
     });
     expect(apple.useCase).toBe('PREMIUM');
@@ -51,6 +53,7 @@ describe('Catalog Data Adapter & Multi-Faceted Filters (SCR-03)', () => {
     const creator = mapDtoToLaptopProduct({
       sku: 'LT-TB14',
       name: 'ThinkBook 14 G6',
+      priceVnd: '100',
       brand: 'LENOVO',
       gpuModel: 'Intel Arc Graphics',
     });

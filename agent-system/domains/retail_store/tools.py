@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Literal, Optional
 import httpx
 from pydantic import BaseModel, Field
 
-from agent_platform.harness.tools.spec import tool, ToolContext, ToolUnavailableError, ConfirmedOrderStatus, ConfirmedCatalogRead, ConfirmedCartRead
+from agent_platform.harness.tools.spec import tool, ToolContext, ToolUnavailableError, ConfirmedOrderStatus, ConfirmedCatalogRead, ConfirmedCartRead, ConfirmedInventoryRead
 from agent_platform.harness.tools.commerce_contracts import validated_write
 from agent_platform.rag.retrieval.hybrid_engine import ProductionHybridRetriever as PlatformHybridRetriever
 
@@ -190,14 +190,16 @@ def _confirmed_write(operation: str, data: Dict[str, Any], args: BaseModel, ctx:
     return result
 
 
-def _without_inventory(value: Any) -> Any:
-    """Catalog fallback cannot establish live inventory availability."""
-    inventory_keys = {"stock_available", "in_stock", "inStock", "available_qty", "availableQty", "stock"}
-    if isinstance(value, dict):
-        return {k: _without_inventory(v) for k, v in value.items() if k not in inventory_keys}
-    if isinstance(value, list):
-        return [_without_inventory(v) for v in value]
-    return value
+def _verified_catalog_fields(item: Dict[str, Any], price_field: str) -> Dict[str, Any]:
+    """Expose only fields whose meaning is verified in the current Core contract.
+
+    Core may currently substitute product specifications and stock status when
+    mapping database rows; those values must not reach the model as facts.
+    """
+    result = {key: item[key] for key in ("sku", "name", price_field)}
+    if isinstance(item.get("id"), str) and item["id"].strip():
+        result["id"] = item["id"]
+    return result
 
 
 def _verified_catalog_item(value: Any, price_field: str) -> bool:
@@ -367,9 +369,13 @@ class DomainHybridRAGAdapter:
 # TOOL 1: Lookup Laptop Catalog (search_products)
 # ---------------------------------------------------------------------------
 class LaptopCatalogInput(BaseModel):
+    prefer_low_price: bool = Field(
+        default=False,
+        description="Ưu tiên mẫu giá thấp/rẻ nhất. Với 'giá rẻ' chưa có ngân sách, đặt true và để trống max_price/min_price; không tự đoán mức trần.",
+    )
     max_price: Optional[Decimal] = Field(
         default=None,
-        description="Mức giá trần tối đa cần tìm kiếm (VNĐ). Ví dụ: 20000000",
+        description="Mức giá trần khách đã nêu rõ (VNĐ). Không suy ra con số từ 'giá rẻ'. Ví dụ khách nói dưới 20 triệu: 20000000",
     )
     min_price: Optional[Decimal] = Field(
         default=None,
@@ -387,7 +393,7 @@ class LaptopCatalogInput(BaseModel):
     )
     keyword: Optional[str] = Field(
         default=None,
-        description="Từ khóa tìm kiếm trong tên hoặc mô tả sản phẩm (ví dụ: OLED, Ultra 5, văn phòng)",
+        description="Tên/mã/thông số cụ thể trong catalog, ví dụ OLED, Ultra 5. Không dùng 'giá rẻ', 'laptop', 'học tập' hoặc toàn bộ câu hỏi.",
     )
 
 
@@ -413,8 +419,13 @@ async def lookup_laptop_catalog(args: LaptopCatalogInput, ctx: ToolContext) -> D
     if (not isinstance(laptops, list) or type(count) is not int or count != len(laptops)
             or not all(_verified_catalog_item(item, "price_vnd") for item in laptops)):
         raise ToolUnavailableError("Không thể xác minh danh mục sản phẩm.")
+    if args.prefer_low_price:
+        laptops = sorted(laptops, key=lambda item: int(item["price_vnd"]))
     return ConfirmedCatalogRead({"status": "success", "source": "nestjs_commerce_ssot", "total_matched": count,
-                                 "items": _without_inventory(laptops)})
+                                 "prefer_low_price": args.prefer_low_price,
+                                 "follow_up_question": "Bạn dự định chi khoảng bao nhiêu và dùng máy cho học tập hay công việc?",
+                                 "max_price_vnd": payload["max_price_vnd"],
+                                 "items": [_verified_catalog_fields(item, "price_vnd") for item in laptops]})
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +441,7 @@ class ProductDetailsInput(BaseModel):
 
 @tool(
     name="get_product_details",
-    description="Xem thông số kỹ thuật chi tiết, giá bán niêm yết và chế độ bảo hành của một mẫu laptop theo mã SKU.",
+    description="Tra cứu tên và giá niêm yết của một mẫu laptop theo mã SKU.",
     input_model=ProductDetailsInput,
     side_effect=False,
     allowed_roles=["guest", "customer", "admin"],
@@ -440,7 +451,7 @@ async def get_product_details(args: ProductDetailsInput, ctx: ToolContext) -> Di
     live_data = await _require_commerce_result("get_product_details", {"sku": args.sku, "variant_id": args.sku}, ctx, ("sku", "name", "priceVnd"))
     if not _verified_catalog_item(live_data, "priceVnd") or not _matches_product_ref(live_data, args.sku):
         raise ToolUnavailableError("Không thể xác minh chi tiết sản phẩm.")
-    return ConfirmedCatalogRead({"status": "success", "source": "nestjs_commerce_ssot", "product": _without_inventory(live_data)})
+    return ConfirmedCatalogRead({"status": "success", "source": "nestjs_commerce_ssot", "product": _verified_catalog_fields(live_data, "priceVnd")})
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +468,7 @@ class CompareProductsInput(BaseModel):
 
 @tool(
     name="compare_products",
-    description="So sánh trực tiếp thông số kỹ thuật (CPU, RAM, SSD, Màn hình) và giá niêm yết giữa 2 đến 4 mẫu laptop.",
+    description="So sánh tên và giá niêm yết giữa 2 đến 4 mẫu laptop.",
     input_model=CompareProductsInput,
     side_effect=False,
     allowed_roles=["guest", "customer", "admin"],
@@ -471,7 +482,7 @@ async def compare_products(args: CompareProductsInput, ctx: ToolContext) -> Dict
             or not all(_matches_product_ref(item, ref) for item, ref in zip(comparison, args.skus))):
         raise ToolUnavailableError("Không thể xác minh dữ liệu so sánh sản phẩm.")
     return ConfirmedCatalogRead({"status": "success", "source": "nestjs_commerce_ssot", "total": total,
-                                 "comparison": _without_inventory(comparison)})
+                                 "comparison": [_verified_catalog_fields(item, "priceVnd") for item in comparison]})
 
 
 # ---------------------------------------------------------------------------
@@ -498,12 +509,14 @@ class CheckInventoryInput(BaseModel):
     timeout_s=5.0,
 )
 async def check_inventory(args: CheckInventoryInput, ctx: ToolContext) -> Dict[str, Any]:
-    item = _find_catalog_item(args.sku)
-    target = item.get("aliases", [item["sku"]])[0] if item else args.sku
-    data = await _require_commerce_result("check_inventory", {"sku": target, "variant_id": target, "store_id": args.store_id}, ctx, ("available_qty",))
-    if not isinstance(data["available_qty"], int) or isinstance(data["available_qty"], bool) or data["available_qty"] < 0:
+    target = args.sku
+    data = await _require_commerce_result("check_inventory", {"sku": target, "variant_id": target, "store_id": args.store_id}, ctx, ("sku", "store_id", "store_code", "available_qty"))
+    if (data["sku"] != target or data["store_code"] != args.store_id
+            or not isinstance(data["store_id"], str) or not data["store_id"].strip()
+            or type(data["available_qty"]) is not int or data["available_qty"] < 0):
         raise ToolUnavailableError("Không thể xác minh dữ liệu tồn kho.")
-    return {**data, "status": "success", "source": "nestjs_commerce_ssot"}
+    return ConfirmedInventoryRead({"sku": target, "store_id": data["store_id"], "store_code": data["store_code"],
+            "available_qty": data["available_qty"], "status": "success", "source": "nestjs_commerce_ssot"})
 
 # ---------------------------------------------------------------------------
 # TOOL 5: Search Knowledge (Hybrid RAG Engine + NestJS Policy SSOT)
@@ -588,6 +601,10 @@ class AddToCartInput(BaseModel):
         le=20,
         description="Số lượng sản phẩm cần thêm (mặc định: 1)",
     )
+    store_id: Optional[str] = Field(
+        default=None,
+        description="Mã hoặc UUID cửa hàng do người dùng chọn, ví dụ STORE_HCM_001. Hỏi lại người dùng nếu chưa chọn cửa hàng.",
+    )
 
 
 @tool(
@@ -599,9 +616,11 @@ class AddToCartInput(BaseModel):
     timeout_s=5.0,
 )
 async def add_to_cart(args: AddToCartInput, ctx: ToolContext) -> Dict[str, Any]:
-    item = _find_catalog_item(args.sku)
-    target = item.get("aliases", [item["sku"]])[0] if item else args.sku
-    data = await _require_commerce_result("add_to_cart", {"sku": target, "variant_id": target, "quantity": args.quantity}, ctx, ("status", "cart"), side_effect=True)
+    target = args.sku
+    payload = {"sku": target, "variant_id": target, "quantity": args.quantity}
+    if args.store_id:
+        payload["store_id"] = args.store_id
+    data = await _require_commerce_result("add_to_cart", payload, ctx, ("status", "cart"), side_effect=True)
     if data["status"] != "success" or not isinstance(data["cart"], dict):
         raise ToolUnavailableError("Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại.")
     return _confirmed_write("add_to_cart", data, args, ctx)
@@ -626,8 +645,7 @@ class RemoveFromCartInput(BaseModel):
     timeout_s=5.0,
 )
 async def remove_from_cart(args: RemoveFromCartInput, ctx: ToolContext) -> Dict[str, Any]:
-    item = _find_catalog_item(args.sku)
-    target = item.get("aliases", [item["sku"]])[0] if item else args.sku
+    target = args.sku
     data = await _require_commerce_result("remove_from_cart", {"sku": target, "variant_id": target}, ctx, ("status", "cart"), side_effect=True)
     if data["status"] != "success" or not isinstance(data["cart"], dict):
         raise ToolUnavailableError("Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại.")

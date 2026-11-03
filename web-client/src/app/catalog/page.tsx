@@ -5,9 +5,10 @@ import Link from 'next/link';
 import { BrandSectionBackground } from '@/components/patterns';
 import {
   getLaptopCatalog,
-  BASELINE_LAPTOP_CATALOG,
+
 } from '@/features/catalog/services/catalog.get';
 import { LaptopProduct } from '@/features/catalog/types';
+import { ScreenEmpty } from '@/components/commons/ScreenEmpty';
 import { formatVND } from '@/lib/utils';
 import {
   CheckCircle2,
@@ -26,13 +27,10 @@ export default function CatalogPage() {
   const [selectedUseCase, setSelectedUseCase] = useState('ALL');
   const [minRam, setMinRam] = useState<number>(0);
   const [maxPriceVnd, setMaxPriceVnd] = useState<number>(40000000);
-  const [onlyInStock, setOnlyInStock] = useState(true);
-  const [compareSkus, setCompareSkus] = useState<string[]>([
-    'LT-ASUS-VIVO15-OLED',
-    'LT-LENOVO-TB14-G6',
-  ]);
+  const [onlyInStock, setOnlyInStock] = useState(false);
+  const [compareSkus, setCompareSkus] = useState<string[]>([]);
 
-  const [products, setProducts] = useState<LaptopProduct[]>(BASELINE_LAPTOP_CATALOG);
+  const [products, setProducts] = useState<LaptopProduct[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
 
@@ -54,6 +52,7 @@ export default function CatalogPage() {
       setIsLoading(false);
     }).catch(() => {
       if (!active) return;
+      setProducts([]); setIsLiveConnected(false);
       setIsLoading(false);
     });
 
@@ -85,7 +84,7 @@ export default function CatalogPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              Danh Mục Laptop &amp; Bộ Lọc Đa Chiều (SCR-03 • UC02)
+              Danh Mục Laptop Chính Hãng
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
@@ -120,8 +119,8 @@ export default function CatalogPage() {
           <Database className="w-4 h-4 text-blue-600 shrink-0" />
           <span>
             {isLiveConnected
-              ? 'Dữ liệu kết nối trực tiếp PostgreSQL 16+ & NestJS Core API (SSOT). Tồn kho và giá niêm yết theo thời gian thực.'
-              : 'Đang kết nối cơ sở dữ liệu PostgreSQL SSOT...'}
+              ? 'Dữ liệu kết nối thời gian thực. Tồn kho khả dụng và giá niêm yết chính xác theo từng chi nhánh siêu thị.'
+              : 'Đang đồng bộ danh mục sản phẩm...'}
           </span>
         </div>
         {isLoading && (
@@ -235,6 +234,22 @@ export default function CatalogPage() {
         </div>
       </div>
 
+      {!isLoading && products.length === 0 && (
+        <ScreenEmpty
+          title="Không tìm thấy laptop phù hợp"
+          description="Không có sản phẩm nào thỏa mãn các tiêu chí lọc hiện tại. Vui lòng thay đổi khoảng giá, dung lượng RAM hoặc từ khóa tìm kiếm."
+          actionText="Đặt lại bộ lọc"
+          onAction={() => {
+            setSearchTerm('');
+            setSelectedBrand('ALL');
+            setSelectedUseCase('ALL');
+            setMinRam(0);
+            setMaxPriceVnd(40000000);
+            setOnlyInStock(false);
+          }}
+        />
+      )}
+
       {/* Grid of Laptops */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {products.map((item) => {
@@ -256,7 +271,7 @@ export default function CatalogPage() {
                   </div>
                   <span className="ts-badge-success text-xs px-2.5 py-0.5 rounded-md font-bold flex items-center gap-1 tabular-nums">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Tổng tồn: {item.totalAvailableStock} máy
+                    Kiểm tra tồn kho tại trang sản phẩm
                   </span>
                 </div>
 
@@ -313,7 +328,7 @@ export default function CatalogPage() {
               <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
                 <div>
                   <span className="text-[10px] text-slate-400 font-bold block uppercase">
-                    Giá niêm yết (SSOT)
+                    Giá niêm yết
                   </span>
                   <span className="text-lg font-extrabold text-blue-600 tabular-nums">
                     {item.formattedPrice}
@@ -336,7 +351,7 @@ export default function CatalogPage() {
                     href={`/products/${item.sku}`}
                     className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition"
                   >
-                    Chi Tiết PDP
+                    Xem chi tiết
                   </Link>
                   <Link
                     href={`/checkout?sku=${item.sku}`}

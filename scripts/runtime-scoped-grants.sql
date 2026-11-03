@@ -16,7 +16,7 @@ GRANT DELETE ON public.favorites TO retailmind_app_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.carts, public.cart_items TO retailmind_app_runtime;
 GRANT SELECT ON public.brands, public.categories, public.products, public.order_items, public.idempotency_keys TO retailmind_app_runtime;
 GRANT INSERT ON public.order_items, public.idempotency_keys TO retailmind_app_runtime;
-GRANT UPDATE (target_id, response_payload) ON public.idempotency_keys TO retailmind_app_runtime;
+GRANT UPDATE (target_id, status, response_payload) ON public.idempotency_keys TO retailmind_app_runtime;
 
 -- Agent runtime role (`retailmind_agent_runtime`): isolated to `agent` schema,
 -- zero DDL rights, and zero access to `public` commerce tables.

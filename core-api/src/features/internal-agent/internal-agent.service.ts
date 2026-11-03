@@ -127,8 +127,6 @@ export class InternalAgentService {
       reserved_qty: stock.reservedQty,
       available_qty: stock.availableQty,
       is_in_stock: stock.isAvailable,
-      reservation_guarantee:
-        'Khóa bi quan Anti-Oversell bảo vệ trong 24 giờ sau khi đặt đơn.',
     };
   }
 

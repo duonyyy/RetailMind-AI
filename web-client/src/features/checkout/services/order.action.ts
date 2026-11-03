@@ -44,12 +44,14 @@ export async function confirmOrderAction(
     idempotencyKey,
     headers,
     body: JSON.stringify({
+      fromCart: payload.fromCart === true,
       storeId: payload.storeId,
       items: payload.items,
       discountCode: payload.discountCode,
       previewToken: payload.previewToken,
       paymentMethod: payload.paymentMethod,
     }),
+    retries: 0,
   });
 
   if (!res.success || !res.data) {
@@ -75,7 +77,7 @@ export async function confirmOrderAction(
     orderId: orderData.orderId,
     status: orderData.status === 'confirmed' ? 'confirmed' : 'placed',
     storeId: orderData.storeId || payload.storeId,
-    storeName: STORE_NAMES[orderData.storeId || payload.storeId] || payload.storeId,
+    storeName: orderData.storeName || orderData.storeId,
     deliveryMode: payload.deliveryMode,
     paymentMethod: payload.paymentMethod,
     totalVnd: orderData.totalVnd,

@@ -49,9 +49,9 @@ export default function AdminHitlPage() {
       const list = Array.isArray(raw) ? raw : raw?.data || [];
 
       const mapped: HitlTaskItem[] = list.map((item: any) => ({
-        taskId: item.task_id || item.approval_id || item.taskId || `task-${Date.now()}`,
-        customerName: item.customer_name || item.customerName || 'Khách hàng MWG',
-        phone: item.phone || '0908***881',
+        taskId: item.task_id || item.approval_id || item.taskId || 'Chưa có thông tin',
+        customerName: item.customer_name || item.customerName || 'Chưa có thông tin',
+        phone: item.phone || 'Chưa có thông tin',
         requestedAction:
           item.requested_action ||
           item.requestedAction ||

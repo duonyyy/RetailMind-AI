@@ -54,17 +54,7 @@ export async function fetchLiveOrderPreview(payload: {
     }
   }
 
-  // Offline fallback only if Core API is unreachable
-  return calculateExactOrderPreview(
-    payload.items.map((it) => ({
-      sku: it.sku,
-      name: it.sku,
-      unitPriceVnd: '17990000',
-      quantity: it.quantity,
-      stockMax: 10,
-    })),
-    payload.discountCode
-  );
+  throw new Error('Không thể xác nhận giá xem trước từ Core.');
 }
 
 /**

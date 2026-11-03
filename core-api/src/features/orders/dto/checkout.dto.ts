@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   ArrayMaxSize,
   ArrayMinSize,
   IsInt,
@@ -28,6 +29,9 @@ export class CheckoutItemDto {
 }
 
 export class CheckoutDto {
+  @IsOptional()
+  @IsBoolean()
+  fromCart?: boolean;
   @IsUUID('4', { message: 'Mã chi nhánh siêu thị (storeId) phải là định dạng UUIDv4 hợp lệ.' })
   storeId!: string;
 

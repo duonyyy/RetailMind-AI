@@ -102,7 +102,7 @@ async def chat_stream_endpoint(
     thread_id = await owned_thread(request, principal, req.session_id)
 
     async def sse_event_generator():
-        yield f"data: {json.dumps({'type': 'session', 'session_id': thread_id})}\n\n"
+        yield f"data: {json.dumps({'type': 'session', 'session_id': thread_id, 'resumable': principal.role != 'guest'})}\n\n"
         # Check input sanitization & prompt injection guard
         clean_query = InputSanitizer.sanitize(req.query)
         if PromptInjectionDetector.is_injection(clean_query):
@@ -164,7 +164,7 @@ async def chat_stream_endpoint(
             hitl_reason = "Yêu cầu cần được kiểm tra; thao tác nghiệp vụ chưa được thực hiện."
             yield f"data: {json.dumps({'type': 'hitl_pending', 'task_id': task_id, 'reason': hitl_reason})}\n\n"
             answer_text = "Yêu cầu đã được ghi nhận để kiểm tra; chưa thực hiện giao dịch."
-            yield f"data: {json.dumps({'type': 'answer', 'content': answer_text, 'grounding_score': None})}\n\n"
+            yield f"data: {json.dumps({'type': 'answer', 'content': answer_text, 'status': 'awaiting_approval', 'grounding_score': None})}\n\n"
             yield "data: [DONE]\n\n"
             return
 

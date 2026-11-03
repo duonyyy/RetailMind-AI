@@ -1,12 +1,15 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { PackageOpen } from 'lucide-react';
 
 interface ScreenEmptyProps {
   title?: string;
   description?: string;
   actionText?: string;
+  actionLabel?: string;
+  actionHref?: string;
   onAction?: () => void;
   className?: string;
 }
@@ -15,24 +18,38 @@ export function ScreenEmpty({
   title = 'Không tìm thấy dữ liệu',
   description = 'Chưa có bản ghi nào phù hợp với bộ lọc tìm kiếm hiện tại.',
   actionText,
+  actionLabel,
+  actionHref,
   onAction,
   className = '',
 }: ScreenEmptyProps) {
+  const label = actionText || actionLabel;
+
   return (
     <div
-      className={`flex flex-col items-center justify-center p-12 text-center rounded-xl border border-dashed border-slate-800 bg-slate-950/40 ${className}`}
+      role="status"
+      className={`flex flex-col items-center justify-center p-10 text-center rounded-2xl border border-dashed border-slate-300 bg-white/70 shadow-xs ${className}`}
     >
-      <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-4 text-slate-500">
+      <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center mb-3 text-slate-400">
         <PackageOpen className="w-7 h-7" />
       </div>
-      <h4 className="text-base font-semibold text-slate-200">{title}</h4>
-      <p className="text-sm text-slate-400 max-w-sm mt-1">{description}</p>
-      {actionText && onAction && (
-        <button
-          onClick={onAction}
-          className="mt-5 px-4 py-2 text-xs font-medium rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors duration-150"
+      <h3 className="text-base font-bold text-slate-800">{title}</h3>
+      <p className="text-xs text-slate-500 max-w-sm mt-1 leading-relaxed">{description}</p>
+      {label && actionHref && (
+        <Link
+          href={actionHref}
+          className="mt-4 px-4 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-xs inline-block"
         >
-          {actionText}
+          {label}
+        </Link>
+      )}
+      {label && !actionHref && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="mt-4 px-4 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-xs"
+        >
+          {label}
         </button>
       )}
     </div>

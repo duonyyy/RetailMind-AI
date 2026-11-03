@@ -123,14 +123,14 @@ class AgentHarness:
                 model_name=self.settings.llm.model_name,
                 timeout_seconds=self.settings.llm.timeout_seconds,
             )
-            return ResilientLLMClient(primary_client=primary, fallback_client=MockLLMClient())
+            return ResilientLLMClient(primary_client=primary)
         elif provider == "gemini":
             primary = GeminiLLM(
                 api_key=self.settings.llm.api_key,
                 model_name=self.settings.llm.model_name,
                 timeout_seconds=self.settings.llm.timeout_seconds,
             )
-            return ResilientLLMClient(primary_client=primary, fallback_client=MockLLMClient())
+            return ResilientLLMClient(primary_client=primary)
         return MockLLMClient()
 
     async def execute(

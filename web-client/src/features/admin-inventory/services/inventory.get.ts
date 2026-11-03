@@ -72,7 +72,7 @@ export async function getBranchInventoryMatrix(): Promise<BranchInventoryRecord[
     const res = await apiFetch<any>('inventory/matrix', { retries: 1 });
     if (res.success && res.data) {
       const list = Array.isArray(res.data) ? res.data : (res.data as any)?.data || [];
-      if (list.length > 0) {
+      if (Array.isArray(list)) {
         return list.map((r: any) => ({
           id: r.id || `${r.storeId}-${r.variantId}`,
           sku: r.sku,
@@ -91,5 +91,5 @@ export async function getBranchInventoryMatrix(): Promise<BranchInventoryRecord[
     // Fallback to baseline
   }
 
-  return INITIAL_BRANCH_INVENTORY;
+  throw new Error('Dữ liệu tồn kho hiện không khả dụng.');
 }

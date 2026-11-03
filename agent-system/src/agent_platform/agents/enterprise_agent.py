@@ -1,9 +1,10 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, List, Dict, Any, Optional
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
+import json
 from agent_platform.agents.base import BaseAgent
 from agent_platform.domain.pack import DomainPack
-from agent_platform.llm.base import LLMPort
+from agent_platform.llm.base import LLMPort, LLMUnavailableError
 from agent_platform.harness.tools.registry import ToolRegistry
 from agent_platform.harness.memory.short_term import ShortTermMemory
 from agent_platform.harness.guards.pii import PIIMasker
@@ -111,12 +112,20 @@ class EnterpriseAgent(BaseAgent):
             if isinstance(m, HumanMessage):
                 llm_messages.append({"role": "user", "content": m.content})
             elif isinstance(m, AIMessage):
-                llm_messages.append({"role": "assistant", "content": m.content or ""})
+                entry = {"role": "assistant", "content": m.content or ""}
+                if m.tool_calls:
+                    entry["tool_calls"] = [
+                        {"id": call["id"], "type": "function", "function": {
+                            "name": call["name"], "arguments": json.dumps(call["args"], ensure_ascii=False),
+                        }} for call in m.tool_calls
+                    ]
+                llm_messages.append(entry)
             elif isinstance(m, ToolMessage):
                 llm_messages.append({
                     "role": "tool",
                     "content": m.content,
                     "name": getattr(m, "name", "tool"),
+                    "tool_call_id": m.tool_call_id,
                 })
 
         # 3. Server-side RBAC: only pass schemas allowed for the principal's role
@@ -124,11 +133,15 @@ class EnterpriseAgent(BaseAgent):
 
         # 4. Invoke LLMPort with fail-closed PII redaction
         safe_messages = PIIMasker.mask(llm_messages, fail_closed=True)
-        resp = await self.llm.complete(
-            safe_messages,
-            tools=schemas if schemas else None,
-            temperature=0.0,
-        )
+        try:
+            resp = await self.llm.complete(
+                safe_messages,
+                tools=schemas if schemas else None,
+                temperature=0.0,
+            )
+        except LLMUnavailableError:
+            return {"status": "abstained", "pending_tool_calls": [],
+                    "final_answer": "Dịch vụ mô hình hiện không khả dụng. Vui lòng thử lại sau."}
 
         updates: Dict[str, Any] = {"step_count": step_count}
 

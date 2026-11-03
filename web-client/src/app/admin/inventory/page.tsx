@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { BrandSectionBackground } from '@/components/patterns';
 import {
   getBranchInventoryMatrix,
-  INITIAL_BRANCH_INVENTORY,
+
 } from '@/features/admin-inventory/services/inventory.get';
 import { adjustBranchStockAction } from '@/features/admin-inventory/services/inventory.action';
 import { BranchInventoryRecord } from '@/features/admin-inventory/types';
@@ -22,7 +22,7 @@ import {
 export default function AdminInventoryPage() {
   const [selectedBranch, setSelectedBranch] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [inventory, setInventory] = useState<BranchInventoryRecord[]>(INITIAL_BRANCH_INVENTORY);
+  const [inventory, setInventory] = useState<BranchInventoryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
   const [deltaQty, setDeltaQty] = useState<number>(5);
@@ -36,7 +36,8 @@ export default function AdminInventoryPage() {
       const data = await getBranchInventoryMatrix();
       setInventory(data);
     } catch {
-      // Ignored
+      setInventory([]);
+      setAuditToast('Không thể tải dữ liệu tồn kho.');
     } finally {
       setIsLoading(false);
     }
@@ -77,7 +78,7 @@ export default function AdminInventoryPage() {
 
       setAdjustingId(null);
       setAuditToast(
-        `Đã cập nhật tồn kho vào PostgreSQL SSOT & ghi Hash Chain [${res.auditHash}] (Lý do: "${adjustReason}")`
+        `Core xác nhận cập nhật tồn kho (Lý do: "${adjustReason}").`
       );
       loadInventory();
     } catch {
@@ -110,12 +111,12 @@ export default function AdminInventoryPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Warehouse className="w-5 h-5 text-blue-600" />
-            <span>Ma Trận Tồn Kho Chi Nhánh — Inventory Hub (SCR-16 • UC06)</span>
+            <span>Quản Lý Tồn Kho Chi Nhánh (Inventory Hub)</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
             <Database className="w-3.5 h-3.5 text-blue-600" />
             <span>
-              Giám sát tồn vật lý, tồn giữ chỗ và tồn khả dụng thời gian thực. Khóa bi quan chống oversell theo chuẩn ADR-007.
+              Giám sát tồn vật lý, tồn giữ chỗ và tồn khả dụng thời gian thực tại các chi nhánh siêu thị.
             </span>
           </p>
         </div>
@@ -200,6 +201,13 @@ export default function AdminInventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
+              {!isLoading && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-500">
+                    Chưa có bản ghi tồn kho nào phù hợp với bộ lọc tìm kiếm.
+                  </td>
+                </tr>
+              )}
               {filtered.map((item) => {
                 const isLow = item.availableQty <= item.safetyThreshold;
                 const isEditing = adjustingId === item.id;

@@ -19,6 +19,11 @@ describe('CartService (Persistent Cart & Stock Availability - UC04)', () => {
   const STORE_HCM = '10000000-0000-0000-0000-000000000001';
   const TARGET_SKU = 'LT-ASUS-VIVO15-OLED';
 
+  it('requires an explicit store instead of assuming a fixture store UUID', async () => {
+    await expect(cartService.addItem(CUSTOMER_A, { sku: TARGET_SKU, quantity: 1 }))
+      .rejects.toThrow(BadRequestException);
+  });
+
   beforeEach(async () => {
     mockDataSource = createMockDataSource();
 

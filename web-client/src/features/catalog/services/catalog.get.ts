@@ -23,7 +23,7 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     storageType: '512GB M.2 PCIe Gen 4 NVMe SSD',
     cpuModel: 'Intel Core i5-13500H (12 nhân, 16 luồng, 4.7GHz)',
     cpuScore: 86,
-    gpuModel: 'Intel Iris Xe Graphics',
+    gpuModel: 'Chưa xác nhận',
     gpuScore: 68,
     displaySpec: '15.6" 2.8K (2880x1620) OLED 120Hz, 600 nits HDR',
     colorGamut: '100% DCI-P3 Pantone Validated',
@@ -86,7 +86,7 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     storageType: '512GB M.2 PCIe NVMe SSD',
     cpuModel: 'Intel Core i5-1335U (10 nhân, 12 luồng, 4.6GHz)',
     cpuScore: 79,
-    gpuModel: 'Intel Iris Xe Graphics',
+    gpuModel: 'Chưa xác nhận',
     gpuScore: 65,
     displaySpec: '14.0" FHD+ (1920x1200) 16:10 WVA Anti-Glare',
     colorGamut: '100% sRGB ComfortView',
@@ -212,7 +212,7 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     storageType: '512GB PCIe Gen 4 NVMe SSD',
     cpuModel: 'Intel Core i5-13500H (12 nhân, 16 luồng)',
     cpuScore: 85,
-    gpuModel: 'Intel Iris Xe Graphics',
+    gpuModel: 'Chưa xác nhận',
     gpuScore: 67,
     displaySpec: '14.0" 2.8K (2880x1800) OLED 90Hz, 1ms',
     colorGamut: '100% DCI-P3 TrueBlack 500',
@@ -275,7 +275,7 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
     storageType: '512GB PCIe NVMe M.2 SSD',
     cpuModel: 'Intel Core i5-1235U (10 nhân, 12 luồng)',
     cpuScore: 78,
-    gpuModel: 'Intel Iris Xe Graphics',
+    gpuModel: 'Chưa xác nhận',
     gpuScore: 64,
     displaySpec: '14.0" FHD (1920x1080) IPS BrightView 250 nits',
     colorGamut: '45% NTSC',
@@ -387,9 +387,12 @@ export const BASELINE_LAPTOP_CATALOG: LaptopProduct[] = [
 ];
 
 export function mapDtoToLaptopProduct(dto: any, branches?: BranchStockItem[]): LaptopProduct {
-  const priceVnd = String(dto.priceVnd || dto.price_vnd || '0');
-  const ramGb = Number(dto.ramGb || dto.ram_gb) || 16;
-  const storageGb = Number(dto.storageGb || dto.storage_gb) || 512;
+  const priceVnd = String(dto.priceVnd ?? dto.price_vnd ?? '');
+  if (typeof dto.sku !== 'string' || !dto.sku.trim() || typeof dto.name !== 'string' || !dto.name.trim() || !/^\d+$/.test(priceVnd)) {
+    throw new Error('Dữ liệu sản phẩm chưa được xác nhận.');
+  }
+  const ramGb = Number(dto.ramGb || dto.ram_gb) || 0;
+  const storageGb = Number(dto.storageGb || dto.storage_gb) || 0;
   const brand = String(dto.brand || 'Laptop').toUpperCase();
   const name = dto.name || 'Laptop Chính Hãng';
   const sku = dto.sku || '';
@@ -405,56 +408,10 @@ export function mapDtoToLaptopProduct(dto: any, branches?: BranchStockItem[]): L
     useCase = 'CREATOR';
   }
 
-  const cpuScore =
-    dto.cpuScore ||
-    (String(dto.cpuModel).includes('Ultra')
-      ? 93
-      : String(dto.cpuModel).includes('13650')
-      ? 97
-      : String(dto.cpuModel).includes('M2')
-      ? 91
-      : 85);
-  const gpuScore =
-    dto.gpuScore ||
-    (gpuLower.includes('rtx')
-      ? 96
-      : gpuLower.includes('arc')
-      ? 84
-      : gpuLower.includes('m2')
-      ? 86
-      : 68);
+  const cpuScore = dto.cpuScore ?? 0;
+  const gpuScore = dto.gpuScore ?? 0;
 
-  const defaultBranches: BranchStockItem[] = [
-    {
-      storeId: '10000000-0000-0000-0000-000000000001',
-      branchCode: 'MWG_HCM_001',
-      name: 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM',
-      city: 'HCM',
-      physicalQty: 12,
-      reservedQty: 2,
-      availableQty: 10,
-    },
-    {
-      storeId: '10000000-0000-0000-0000-000000000002',
-      branchCode: 'MWG_HN_002',
-      name: 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội',
-      city: 'HN',
-      physicalQty: 8,
-      reservedQty: 1,
-      availableQty: 7,
-    },
-    {
-      storeId: '10000000-0000-0000-0000-000000000003',
-      branchCode: 'MWG_DN_003',
-      name: 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng',
-      city: 'DN',
-      physicalQty: 5,
-      reservedQty: 0,
-      availableQty: 5,
-    },
-  ];
-
-  const actualBranches = branches && branches.length > 0 ? branches : defaultBranches;
+  const actualBranches = branches || [];
   const totalStock = actualBranches.reduce((sum, b) => sum + b.availableQty, 0);
 
   return {
@@ -467,31 +424,24 @@ export function mapDtoToLaptopProduct(dto: any, branches?: BranchStockItem[]): L
     priceVnd,
     originalPriceVnd:
       dto.originalPriceVnd ||
-      (BigInt(priceVnd) * BigInt(112) / BigInt(100)).toString(),
+      priceVnd,
     formattedPrice: dto.formattedPrice || formatVND(priceVnd),
     ramGb,
-    ramType: dto.ramType || `${ramGb}GB DDR4/LPDDR5`,
+    ramType: dto.ramType || (ramGb ? `${ramGb}GB` : 'Chưa xác nhận'),
     storageGb,
-    storageType: dto.storageType || `${storageGb}GB M.2 PCIe NVMe SSD`,
-    cpuModel: dto.cpuModel || dto.cpu_model || 'Intel Core i5',
+    storageType: dto.storageType || (storageGb ? `${storageGb}GB` : 'Chưa xác nhận'),
+    cpuModel: dto.cpuModel || dto.cpu_model || 'Chưa xác nhận',
     cpuScore,
-    gpuModel: dto.gpuModel || dto.gpu_model || 'Intel Iris Xe Graphics',
+    gpuModel: dto.gpuModel || dto.gpu_model || 'Chưa xác nhận',
     gpuScore,
-    displaySpec: dto.displaySpec || '15.6" Full HD (1920x1080) Anti-Glare',
-    colorGamut: dto.colorGamut || '100% sRGB',
-    refreshRateHz: dto.refreshRateHz || 60,
-    weightKg: dto.weightKg || '1.6 kg',
-    batteryHours: dto.batteryHours || 10,
-    warrantyMonths: dto.warrantyMonths || 24,
-    returnDays: dto.returnDays || 30,
-    highlights: Array.isArray(dto.highlights) && dto.highlights.length > 0
-      ? dto.highlights
-      : [
-          `CPU: ${dto.cpuModel || dto.cpu_model || 'Intel Core i5'}`,
-          `RAM: ${ramGb}GB | Ổ cứng: ${storageGb}GB SSD`,
-          'Bảo hành chính hãng tại Thế Giới Di Động / Điện Máy Xanh',
-          'Đổi mới 30 ngày nếu phát sinh lỗi nhà sản xuất',
-        ],
+    displaySpec: dto.displaySpec || 'Chưa xác nhận',
+    colorGamut: dto.colorGamut || 'Chưa xác nhận',
+    refreshRateHz: dto.refreshRateHz || 0,
+    weightKg: dto.weightKg || 'Chưa xác nhận',
+    batteryHours: dto.batteryHours || 0,
+    warrantyMonths: dto.warrantyMonths || 0,
+    returnDays: dto.returnDays || 0,
+    highlights: Array.isArray(dto.highlights) ? dto.highlights : [],
     inStock: dto.inStock !== false && totalStock > 0,
     totalAvailableStock: totalStock,
     branches: actualBranches,
@@ -559,7 +509,7 @@ export async function getLaptopCatalog(params: CatalogFilterParams = {}): Promis
         ? (res.data as any).data
         : [];
 
-      if (rawItems.length > 0) {
+      if (Array.isArray(rawItems)) {
         const mapped = rawItems.map((it: any) => mapDtoToLaptopProduct(it));
         return filterCatalogItems(mapped, params);
       }
@@ -568,7 +518,7 @@ export async function getLaptopCatalog(params: CatalogFilterParams = {}): Promis
     // Falls through to baseline fallback
   }
 
-  return filterCatalogItems(BASELINE_LAPTOP_CATALOG, params);
+  throw new Error('Danh mục sản phẩm hiện không khả dụng.');
 }
 
 export async function getLaptopBySku(sku: string): Promise<LaptopProduct | null> {
@@ -580,16 +530,26 @@ export async function getLaptopBySku(sku: string): Promise<LaptopProduct | null>
     });
 
     if (res.success && res.data && (res.data.sku || res.data.id)) {
-      return mapDtoToLaptopProduct(res.data);
+      if (res.data.sku?.toUpperCase() !== normalized && res.data.id?.toUpperCase() !== normalized) return null;
+      const locations = await apiFetch<any[]>('inventory/stores', { retries: 0 });
+      const branches: BranchStockItem[] = [];
+      if (locations.success && Array.isArray(locations.data)) {
+        const stocks = await Promise.all(locations.data.map(async location => {
+          const stock = await apiFetch<any>(`inventory/stock?storeId=${encodeURIComponent(location.id)}&variantId=${encodeURIComponent(res.data.id || normalized)}`, { retries: 0 });
+          if (!stock.success || !stock.data || !Number.isSafeInteger(stock.data.availableQty)) return null;
+          return { storeId: location.id, branchCode: location.code, name: location.name,
+            city: (location.code?.includes('_HN_') ? 'HN' : location.code?.includes('_DN_') ? 'DN' : 'HCM') as 'HCM' | 'HN' | 'DN', physicalQty: stock.data.onHandQty, reservedQty: stock.data.reservedQty,
+            availableQty: stock.data.availableQty };
+        }));
+        for (const stock of stocks) if (stock) branches.push(stock);
+      }
+      return mapDtoToLaptopProduct(res.data, branches);
     }
   } catch {
     // Falls through to baseline fallback
   }
 
-  return (
-    BASELINE_LAPTOP_CATALOG.find((item) => item.sku.toUpperCase() === normalized) ||
-    BASELINE_LAPTOP_CATALOG[0]
-  );
+  return null;
 }
 
 export async function getLaptopComparison(skus: string[]): Promise<LaptopProduct[]> {
@@ -608,7 +568,7 @@ export async function getLaptopComparison(skus: string[]): Promise<LaptopProduct
         : Array.isArray(res.data.items)
         ? res.data.items
         : [];
-      if (items.length > 0) {
+      if (Array.isArray(items)) {
         return items.map((it: any) => mapDtoToLaptopProduct(it));
       }
     }
@@ -616,5 +576,5 @@ export async function getLaptopComparison(skus: string[]): Promise<LaptopProduct
     // Falls through to baseline fallback
   }
 
-  return BASELINE_LAPTOP_CATALOG.filter((it) => cleanSkus.includes(it.sku.toUpperCase()));
+  throw new Error('Không thể xác nhận dữ liệu so sánh sản phẩm.');
 }

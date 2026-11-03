@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { BrandSectionBackground } from '@/components/patterns';
 import { apiFetch } from '@/lib/api-client';
@@ -8,7 +8,7 @@ import { formatVND } from '@/lib/utils';
 import { confirmOrderAction } from '@/features/checkout/services/order.action';
 import { ConfirmedOrderReceipt } from '@/features/checkout/types';
 import { SimulatedQRPaymentModal } from '@/features/checkout/components/SimulatedQRPaymentModal';
-import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
+import { useCurrentUser } from '@/features/auth/useCurrentUser';
 
 import {
   Building2,
@@ -25,11 +25,14 @@ import {
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useCurrentUser();
 
   const initialSku = searchParams.get('sku') || '';
+  const fromCart = searchParams.get('source') === 'cart';
+  const [cartItems, setCartItems] = useState<Array<{ sku: string; quantity: number; name: string }>>([]);
   const initialStore = searchParams.get('store') || '';
   const initialQty = parseInt(searchParams.get('qty') || '1', 10);
-  const initialVoucher = searchParams.get('voucher') || 'MWG_VIP500';
+  const initialVoucher = searchParams.get('voucher') || '';
 
   const [selectedSku, setSelectedSku] = useState(initialSku);
   const [quantity, setQuantity] = useState(Number.isSafeInteger(initialQty) && initialQty > 0 ? initialQty : 1);
@@ -37,9 +40,15 @@ function CheckoutContent() {
   const [selectedStoreId, setSelectedStoreId] = useState(initialStore);
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'QR_NAPAS247' | 'CARD'>('QR_NAPAS247');
   const [discountCode, setDiscountCode] = useState(initialVoucher);
-  const [customerName, setCustomerName] = useState('Trần Khách Hàng');
-  const [customerPhone, setCustomerPhone] = useState('0908123883');
-  const [deliveryAddress, setDeliveryAddress] = useState('136 Nguyễn Thái Học, Quận 1, TP.HCM');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  useEffect(() => {
+    if (user?.fullName) setCustomerName(user.fullName);
+    if (user?.phone) setCustomerPhone(user.phone);
+  }, [user]);
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const submitLock = useRef(false);
+  const paymentKey = useRef<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
@@ -56,6 +65,22 @@ function CheckoutContent() {
     vatVnd: string;
     totalVnd: string;
   } | null>(null);
+  const checkoutItems = useMemo(() => fromCart
+    ? cartItems.map(({ sku, quantity }) => ({ sku, quantity }))
+    : selectedSku ? [{ sku: selectedSku, quantity }] : [], [fromCart, cartItems, selectedSku, quantity]);
+  const itemsSignature = JSON.stringify(checkoutItems);
+
+  useEffect(() => {
+    if (!fromCart || !user?.id) return;
+    let active = true;
+    apiFetch<{ items: Array<{ sku: string; quantity: number; name: string }> }>('cart', { retries: 0 }).then(result => {
+      if (!active) return;
+      if (!result.success || !Array.isArray(result.data?.items)) { setCheckoutError('Không thể tải giỏ hàng.'); return; }
+      setCartItems(result.data.items);
+      if (!result.data.items.length) setCheckoutError('Giỏ hàng đang trống.');
+    });
+    return () => { active = false; };
+  }, [fromCart, user?.id]);
 
   // 1. Tải danh mục laptop và cửa hàng trực tiếp từ PostgreSQL Core API
   useEffect(() => {
@@ -85,11 +110,7 @@ function CheckoutContent() {
               name: p.name,
               formattedPrice: p.formattedPrice || formatVND(p.priceVnd || '0'),
             }))
-          : BASELINE_LAPTOP_CATALOG.map((p) => ({
-              sku: p.sku,
-              name: p.name,
-              formattedPrice: p.formattedPrice,
-            }));
+          : [];
 
       const loadedStores: Array<{ id: string; name: string }> =
         Array.isArray(storeRaw) && storeRaw.length > 0
@@ -97,11 +118,7 @@ function CheckoutContent() {
               id: s.id,
               name: s.name,
             }))
-          : [
-              { id: '10000000-0000-0000-0000-000000000001', name: 'Thế Giới Di Động 136 Nguyễn Thái Học, Quận 1, TP.HCM' },
-              { id: '10000000-0000-0000-0000-000000000002', name: 'Thế Giới Di Động 117 Thái Hà, Đống Đa, Hà Nội' },
-              { id: '10000000-0000-0000-0000-000000000003', name: 'Điện Máy Xanh 320 đường 2 Tháng 9, Hải Châu, Đà Nẵng' },
-            ];
+          : [];
 
       setProducts(loadedProducts);
       setStores(loadedStores);
@@ -116,15 +133,9 @@ function CheckoutContent() {
         setSelectedStoreId(matchedStore || loadedStores[0]?.id || '');
       }
     }).catch(() => {
-      // Offline fallback
-      const baseline = BASELINE_LAPTOP_CATALOG.map((p) => ({
-        sku: p.sku,
-        name: p.name,
-        formattedPrice: p.formattedPrice,
-      }));
-      setProducts(baseline);
-      setSelectedSku(baseline[0]?.sku || '');
-      setSelectedStoreId('10000000-0000-0000-0000-000000000001');
+      setProducts([]); setStores([]);
+      setSelectedSku(''); setSelectedStoreId('');
+      setCheckoutError('Không thể tải dữ liệu đặt hàng từ Core.');
     });
 
     return () => {
@@ -136,7 +147,7 @@ function CheckoutContent() {
   useEffect(() => {
     let active = true;
     setPreview(null);
-    if (!selectedSku || !selectedStoreId || !Number.isSafeInteger(quantity) || quantity < 1) {
+    if (!checkoutItems.length || !selectedStoreId || checkoutItems.some(item => !Number.isSafeInteger(item.quantity) || item.quantity < 1)) {
       return () => {
         active = false;
       };
@@ -146,7 +157,7 @@ function CheckoutContent() {
       method: 'POST',
       body: JSON.stringify({
         storeId: selectedStoreId,
-        items: [{ sku: selectedSku, quantity }],
+        items: checkoutItems,
         discountCode,
       }),
       retries: 0,
@@ -167,21 +178,28 @@ function CheckoutContent() {
     return () => {
       active = false;
     };
-  }, [selectedSku, selectedStoreId, quantity, discountCode]);
+  }, [itemsSignature, selectedStoreId, discountCode]);
 
   const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting || !preview) return;
+    if (submitLock.current || !preview || !user?.id) return;
+    submitLock.current = true;
     setIsSubmitting(true);
     setCheckoutError(null);
 
-    const idempotencyKey = crypto.randomUUID();
-
     try {
+      const storageKey = 'retailmind.checkout.pending.' + (user?.id || 'guest');
+      const intent = JSON.stringify({ storeId: selectedStoreId, items: checkoutItems, fromCart, discountCode, paymentMethod });
+      const saved = localStorage.getItem(storageKey);
+      const pending = saved ? JSON.parse(saved) : null;
+      if (pending && pending.intent !== intent) throw new Error('Đơn trước chưa rõ kết quả. Hãy kiểm tra lịch sử đơn trước khi đổi yêu cầu.');
+      const idempotencyKey = pending?.key || crypto.randomUUID();
+      localStorage.setItem(storageKey, JSON.stringify({ key: idempotencyKey, intent }));
       const res = await confirmOrderAction(
         {
           storeId: selectedStoreId,
-          items: [{ sku: selectedSku, quantity }],
+          items: checkoutItems,
+          fromCart,
           discountCode,
           deliveryMode,
           paymentMethod,
@@ -198,8 +216,9 @@ function CheckoutContent() {
       }
 
       const receipt = res.data;
+      localStorage.removeItem(storageKey);
 
-      if (paymentMethod === 'QR_NAPAS247') {
+      if (paymentMethod !== 'COD') {
         setConfirmedReceipt(receipt);
         setQrModalOpen(true);
       } else {
@@ -214,20 +233,28 @@ function CheckoutContent() {
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : 'Không thể đặt hàng.');
     } finally {
+      submitLock.current = false;
       setIsSubmitting(false);
     }
   };
 
   const handleQRPaymentSuccess = async () => {
     if (!confirmedReceipt) return;
+    const keyName = `retailmind.payment.${user?.id}.${confirmedReceipt.orderId}`;
+    paymentKey.current = paymentKey.current || localStorage.getItem(keyName) || crypto.randomUUID();
+    localStorage.setItem(keyName, paymentKey.current);
     try {
       // Simulate payment transaction commit in Core API PostgreSQL SSOT
-      await apiFetch(`orders/${confirmedReceipt.orderId || confirmedReceipt.orderNo}/simulate-payment`, {
+      const result = await apiFetch(`orders/${confirmedReceipt.orderId || confirmedReceipt.orderNo}/simulate-payment`, {
         method: 'POST',
+        idempotencyKey: paymentKey.current,
         retries: 0,
       });
+      if (!result.success || (result.data as any)?.status !== 'completed') throw new Error('Chưa xác nhận thanh toán mô phỏng.');
+      localStorage.removeItem(keyName);
     } catch {
-      // Best-effort simulate payment
+      setCheckoutError('Chưa xác nhận thanh toán mô phỏng. Vui lòng kiểm tra đơn hàng.');
+      throw new Error('Chưa xác nhận thanh toán mô phỏng. Bạn có thể thử lại an toàn với cùng mã thao tác.');
     }
 
     setQrModalOpen(false);
@@ -271,11 +298,11 @@ function CheckoutContent() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Lock className="w-5 h-5 text-blue-600" />
-            <span>Đặt Hàng Đa Bước &amp; Khóa Tồn Bi Quan (SCR-08 • UC03/UC06)</span>
+            <span>Đặt Hàng &amp; Xác Nhận Giữ Chỗ Sản Phẩm</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
             <Database className="w-3.5 h-3.5 text-blue-600" />
-            <span>Giá và cửa hàng lấy từ PostgreSQL SSOT; tồn kho khả dụng được khóa bi quan SELECT FOR UPDATE.</span>
+            <span>Giá niêm yết chính hãng và tồn kho được giữ chỗ trực tiếp tại siêu thị MWG.</span>
           </p>
         </div>
       </div>
@@ -289,7 +316,10 @@ function CheckoutContent() {
               Bước 1: Chọn Sản Phẩm &amp; Hình Thức Nhận Hàng
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            {fromCart ? <div className="space-y-2 text-sm" aria-label="Sản phẩm thanh toán từ giỏ">
+              {cartItems.map(item => <p key={item.sku}>{item.name} — số lượng {item.quantity}</p>)}
+              {!cartItems.length && <p>Giỏ hàng đang trống hoặc chưa tải được.</p>}
+            </div> : <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
               <div className="sm:col-span-2">
                 <label className="font-semibold text-slate-700 block mb-1">Mẫu Laptop:</label>
                 <select
@@ -321,7 +351,7 @@ function CheckoutContent() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold tabular-nums"
                 />
               </div>
-            </div>
+            </div>}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-2">
               <button
@@ -336,13 +366,13 @@ function CheckoutContent() {
                 <Building2 className="w-5 h-5 text-blue-600 shrink-0" />
                 <div>
                   <div className="font-bold text-slate-900">Nhận tại siêu thị MWG gần nhất</div>
-                  <div className="text-[11px] text-slate-500">Giữ máy sẵn sàng nhận trong 60 phút</div>
+                  <div className="text-[11px] text-slate-500">Tồn kho được kiểm tra khi xác nhận đơn</div>
                 </div>
               </button>
 
               <button
                 type="button"
-                onClick={() => setDeliveryMode('HOME_DELIVERY')}
+                disabled
                 className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition ${
                   deliveryMode === 'HOME_DELIVERY'
                     ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-500/20'
@@ -351,8 +381,8 @@ function CheckoutContent() {
               >
                 <Truck className="w-5 h-5 text-blue-600 shrink-0" />
                 <div>
-                  <div className="font-bold text-slate-900">Giao hàng tận nơi miễn phí</div>
-                  <div className="text-[11px] text-slate-500">Giao hỏa tốc nội thành 2 giờ</div>
+                  <div className="font-bold text-slate-900">Giao hàng tận nơi</div>
+                  <div className="text-[11px] text-slate-500">Chưa hỗ trợ trong phiên bản này</div>
                 </div>
               </button>
             </div>
@@ -428,7 +458,7 @@ function CheckoutContent() {
                 }`}
               >
                 <QrCode className="w-4 h-4 text-blue-600" />
-                <div className="font-bold text-slate-900">Chuyển khoản QR Napas247</div>
+                <div className="font-bold text-slate-900">Thanh toán mô phỏng</div>
                 <div className="text-[11px] text-slate-500">Tự động đối soát mã đơn tức thì</div>
               </button>
 
@@ -472,7 +502,7 @@ function CheckoutContent() {
 
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between text-slate-600">
-                <span>Tạm tính ({quantity} máy):</span>
+                <span>Tạm tính ({checkoutItems.reduce((sum, item) => sum + item.quantity, 0)} máy):</span>
                 <span className="font-bold text-slate-900 tabular-nums">
                   {preview ? formatVND(preview.subtotalVnd) : 'Đang tính...'}
                 </span>
@@ -505,12 +535,12 @@ function CheckoutContent() {
               {isSubmitting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Đang khóa tồn kho bi quan...</span>
+                  <span>Đang giữ chỗ sản phẩm và tạo đơn hàng...</span>
                 </>
               ) : (
                 <>
                   <ShieldCheck className="w-4 h-4" />
-                  <span>XÁC NHẬN CHỐT ĐƠN (1-CLICK)</span>
+                  <span>Xác Nhận Đặt Hàng</span>
                 </>
               )}
             </button>

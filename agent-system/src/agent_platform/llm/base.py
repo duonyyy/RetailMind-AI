@@ -1,6 +1,9 @@
 from typing import Protocol, AsyncIterator, List, Dict, Any, Optional, runtime_checkable
 from pydantic import BaseModel, Field
 
+class LLMUnavailableError(RuntimeError):
+    """The configured model could not produce a verified provider response."""
+
 class ToolCall(BaseModel):
     id: str
     name: str

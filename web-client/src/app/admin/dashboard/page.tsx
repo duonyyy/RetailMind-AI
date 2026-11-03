@@ -28,18 +28,20 @@ export default function AdminDashboardPage() {
   const [orders, setOrders] = useState<RecentOrder[]>([]);
   const [totalRevenueBig, setTotalRevenueBig] = useState<bigint>(BigInt(0));
   const [orderCount, setOrderCount] = useState<number>(0);
+  const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchDashboardData = async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const res = await apiFetch<any>('admin/orders', { retries: 1 });
       if (res.success && res.data) {
         const rawList = res.data?.orders || (Array.isArray(res.data) ? res.data : []);
-        setOrderCount(rawList.length);
+        setOrderCount(res.data.total ?? rawList.length);
 
         let rev = BigInt(0);
-        const mapped: RecentOrder[] = rawList.slice(0, 5).map((o: any) => {
+        const mapped: RecentOrder[] = rawList.map((o: any) => {
           const t = BigInt(String(o.totalVnd || '0').replace(/\D/g, '') || '0');
           rev += t;
           return {
@@ -62,27 +64,10 @@ export default function AdminDashboardPage() {
       setIsLoading(false);
     }
 
-    // Default baseline fallback
-    setOrders([
-      {
-        orderNo: 'MWG-20261027-9812',
-        customer: 'Trần Minh Đức',
-        product: 'Asus Vivobook 15 OLED A1505VA',
-        store: 'MWG_HCM_001',
-        total: '19.239.000 ₫',
-        status: 'CONFIRMED',
-      },
-      {
-        orderNo: 'MWG-20261027-9811',
-        customer: 'Lê Thu Hà',
-        product: 'Lenovo ThinkBook 14 G6+ AI PC',
-        store: 'MWG_HN_002',
-        total: '21.439.000 ₫',
-        status: 'SHIPPING',
-      },
-    ]);
-    setTotalRevenueBig(BigInt(40678000));
-    setOrderCount(2);
+    setLoadError('Không thể tải dữ liệu từ Core. Vui lòng thử lại.');
+    setOrders([]);
+    setTotalRevenueBig(BigInt(0));
+    setOrderCount(0);
   };
 
   useEffect(() => {
@@ -91,9 +76,9 @@ export default function AdminDashboardPage() {
 
   const kpis = [
     {
-      label: 'Doanh Thu Chốt Đơn (PostgreSQL SSOT)',
+      label: 'Giá trị đơn trong trang hiện tại',
       value: formatVND(totalRevenueBig),
-      sub: 'Đồng bộ từ các đơn hàng thực tế trong database',
+      sub: 'Không bao gồm các trang đơn hàng khác',
       color: 'text-blue-600',
     },
     {
@@ -104,24 +89,19 @@ export default function AdminDashboardPage() {
     },
     {
       label: 'Chi Phí Token AI (FinOps)',
-      value: '$0.0345 USD',
-      sub: 'DuckDB FinOps Ledger • L1 Cache Hit 68%',
+      value: 'Chưa đo',
+      sub: 'Chưa có báo cáo đo thực tế',
       color: 'text-amber-600',
     },
     {
       label: 'Tỷ Lệ Trả Lời Đúng (Grounding)',
-      value: '99.4%',
-      sub: 'Two-Way Citation Guard • Zero Hallucination',
+      value: 'Chưa đánh giá',
+      sub: 'Cần bộ đánh giá và kết quả xác minh',
       color: 'text-blue-700',
     },
   ];
 
-  const topProducts = [
-    { sku: 'LT-ASUS-VIVO15-OLED', name: 'Asus Vivobook 15 OLED A1505VA', sold: 8, share: 88 },
-    { sku: 'LT-LENOVO-TB14-G6', name: 'Lenovo ThinkBook 14 G6+ AI PC', sold: 5, share: 65 },
-    { sku: 'LT-DELL-INSP14-5430', name: 'Dell Inspiron 14 5430', sold: 3, share: 45 },
-    { sku: 'LT-APPLE-MBA-M2-8GB', name: 'MacBook Air M2 2022', sold: 2, share: 32 },
-  ];
+  const topProducts: Array<{sku: string; name: string; sold: number; share: number}> = [];
 
   return (
     <BrandSectionBackground
@@ -131,16 +111,17 @@ export default function AdminDashboardPage() {
       withGlow={true}
       className="min-h-full p-6 sm:p-8 space-y-6"
     >
+      {loadError && <p role="alert" className="text-red-700">{loadError}</p>}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <LayoutDashboard className="w-5 h-5 text-blue-600" />
-            <span>Bảng Điều Khiển Tổng Quan &amp; Chỉ Số FinOps (SCR-14 • UC06/UC09)</span>
+            <span>Bảng Điều Khiển Tổng Quan Sàn Bán Lẻ</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
             <Database className="w-3.5 h-3.5 text-blue-600" />
             <span>
-              Giám sát thời gian thực doanh số bán lẻ từ PostgreSQL SSOT, hiệu suất chuyển đổi AI Advisor và sổ cái chi phí Token.
+              Giám sát thời gian thực số lượng đơn hàng, doanh thu và hoạt động hệ thống từ Core API.
             </span>
           </p>
         </div>
@@ -181,7 +162,7 @@ export default function AdminDashboardPage() {
           <div className="p-4 border-b border-slate-100 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <ShoppingBag className="w-4 h-4 text-blue-600" />
-              <span>Hoạt Động Đơn Hàng Thời Gian Thực (PostgreSQL SSOT)</span>
+              <span>Hoạt Động Đơn Hàng Gần Đây</span>
             </h2>
             <Link
               href="/admin/orders"
@@ -204,6 +185,13 @@ export default function AdminDashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
+                {!isLoading && orders.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-500">
+                      Chưa có đơn hàng nào được ghi nhận.
+                    </td>
+                  </tr>
+                )}
                 {orders.map((ord) => (
                   <tr key={ord.orderNo} className="hover:bg-slate-50/80">
                     <td className="py-3.5 px-4 font-mono font-bold text-blue-600">{ord.orderNo}</td>
@@ -239,6 +227,11 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="space-y-3.5 text-xs">
+            {topProducts.length === 0 && (
+              <p className="text-xs text-slate-400 py-8 text-center">
+                Chưa có dữ liệu thống kê sản phẩm bán chạy.
+              </p>
+            )}
             {topProducts.map((tp) => (
               <div key={tp.sku} className="space-y-1">
                 <div className="flex justify-between">

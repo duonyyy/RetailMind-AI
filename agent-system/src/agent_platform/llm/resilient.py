@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import List, Dict, Any, Optional, AsyncIterator
-from agent_platform.llm.base import LLMPort, LLMResponse, LLMChunk
+from agent_platform.llm.base import LLMPort, LLMResponse, LLMChunk, LLMUnavailableError
 
 logger = logging.getLogger("agent_platform.llm.resilient")
 
@@ -101,7 +101,7 @@ class ResilientLLMClient(LLMPort):
                         return await self.fallback.complete(
                             safe_messages, tools=tools, temperature=temperature, max_tokens=max_tokens
                         )
-                    raise
+                    raise LLMUnavailableError("Configured model is unavailable") from None
                 await asyncio.sleep(0.5 * (2 ** attempt))
 
         raise RuntimeError("Unexpected resilient completion exit")
@@ -133,4 +133,4 @@ class ResilientLLMClient(LLMPort):
                 async for chunk in self.fallback.stream(safe_messages, tools=tools, temperature=temperature):
                     yield chunk
             else:
-                raise
+                raise LLMUnavailableError("Configured model is unavailable") from None

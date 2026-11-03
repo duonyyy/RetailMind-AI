@@ -28,9 +28,15 @@ def create_retail_test_client() -> TestClient:
     return TestClient(app)
 
 
-def test_chat_stream_laptop_inquiry():
+def test_chat_stream_laptop_inquiry(monkeypatch):
     """Validates that chat streaming emits thought trace, answer, and [DONE] for laptop queries."""
     client = create_retail_test_client()
+    # This case tests an unavailable Core. Do not depend on whether a real
+    # backend happens to be running on the developer's machine/container.
+    async def unavailable_core(*args, **kwargs):
+        return None
+    spec = client.app.state.harness.tool_registry.get('lookup_laptop_catalog')
+    monkeypatch.setitem(spec.func.__globals__, '_call_nestjs_tool', unavailable_core)
 
     resp = client.post(
         "/api/chat/stream",
@@ -55,7 +61,8 @@ def test_chat_stream_laptop_inquiry():
 
     # Without verified evidence, the answer must not assert catalog facts.
     answer_event = next(e for e in events if e.get("type") == "answer")
-    assert "chưa có đủ tài liệu" in answer_event["content"].lower()
+    assert answer_event["status"] == "abstained"
+    assert answer_event["content"].strip()
     assert answer_event.get("grounding_score") is None
     assert "citations" not in event_types
 
@@ -81,7 +88,8 @@ def test_chat_stream_return_policy_inquiry():
     assert "answer" in event_types
 
     answer_event = next(e for e in events if e.get("type") == "answer")
-    assert "chưa có đủ tài liệu" in answer_event["content"].lower()
+    assert answer_event["status"] == "abstained"
+    assert answer_event["content"].strip()
     assert answer_event.get("grounding_score") is None
     assert "citations" not in event_types
 
@@ -92,7 +100,7 @@ def test_chat_stream_hitl_escalation_for_high_refund():
 
     resp = client.post(
         "/api/chat/stream",
-        json={"query": "Tôi muốn yêu cầu bồi hoàn 500.000 VNĐ cho đơn hàng ORD-100201 vì giao trễ 3 giờ"},
+        json={"query": "Tôi muốn yêu cầu bồi hoàn 500.000 VNĐ cho đơn hàng ORD-100201 vì giao trễ 3 giờ", "operation_id": "9d493fb7-ef26-4fc2-8e55-0d131047d231"},
         headers={"Authorization": "Bearer test-customer"},
     )
     assert resp.status_code == 200
@@ -119,7 +127,7 @@ def test_hitl_queue_and_review_workflow():
     # Step 1: Trigger HITL task via stream
     resp = client.post(
         "/api/chat/stream",
-        json={"query": "Tôi muốn bồi hoàn 500000 cho đơn hàng ORD-100201 do hàng trầy xước"},
+        json={"query": "Tôi muốn bồi hoàn 500000 cho đơn hàng ORD-100201 do hàng trầy xước", "operation_id": "9d493fb7-ef26-4fc2-8e55-0d131047d232"},
         headers={"Authorization": "Bearer test-customer"},
     )
     assert resp.status_code == 200
