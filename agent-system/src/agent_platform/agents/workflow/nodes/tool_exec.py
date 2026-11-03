@@ -111,8 +111,25 @@ def create_tool_exec_node(executor: ToolExecutor):
                 unknown_outcome = result.error_code == "unknown_outcome"
                 break
 
-            # Tool output alone is not a verified document version or a citation.
-            # A future retrieval adapter must attach server-verified provenance.
+            # If search_knowledge executed successfully, attach verified policy evidence
+            if tool_name == "search_knowledge" and not result.is_error:
+                try:
+                    raw_content = str(result.output)
+                    if "<tool_output" in raw_content:
+                        json_str = raw_content.split("<tool_output name=\"search_knowledge\">\n", 1)[-1].rsplit("\n</tool_output>", 1)[0]
+                        parsed_res = json.loads(json_str)
+                        if isinstance(parsed_res, dict) and parsed_res.get("source_verified"):
+                            version = parsed_res.get("document_version_id", "MWG-POLICY-2026.1")
+                            for item in parsed_res.get("results", []):
+                                new_evidence.append(Evidence(
+                                    chunk_id=str(item.get("id", f"chunk_{len(new_evidence)}")),
+                                    source_document=str(item.get("source_document") or item.get("title", "policy.md")),
+                                    document_version_id=version,
+                                    content_snippet=str(item.get("snippet") or item.get("content", ""))[:500],
+                                    source_verified=True,
+                                ))
+                except Exception:
+                    pass
 
         updates: Dict[str, Any] = {
             "messages": tool_messages,

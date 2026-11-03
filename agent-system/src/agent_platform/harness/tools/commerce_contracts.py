@@ -42,6 +42,11 @@ class FavoriteWriteResult(CoreResult):
     is_favorited: StrictBool
 
 
+class RefundWriteResult(CoreResult):
+    order_id: StrictStr = Field(min_length=1)
+    refund_id: StrictStr = Field(min_length=1)
+
+
 class ConfirmedCommerceWrite(dict):
     """Internal result constructed only after validation against Core's response."""
 
@@ -72,6 +77,11 @@ def validated_write(tool_name: str, data: dict, args: BaseModel, customer_id: st
             raise ValueError("favorite mismatch")
         state = "có trong" if result.is_favorited else "không còn trong"
         answer = f"Đã xác nhận sản phẩm {result.sku} {state} danh sách yêu thích."
+    elif tool_name in ("safe_refund", "request_return_or_refund"):
+        result = RefundWriteResult.model_validate(data)
+        if result.order_id != args.order_id:
+            raise ValueError("order mismatch")
+        answer = f"Đã xác nhận bồi hoàn thành công cho đơn hàng {result.order_id} (Mã giao dịch: {result.refund_id})."
     else:
         raise ValueError("unsupported commerce operation")
     return ConfirmedCommerceWrite({**data, "source": "nestjs_commerce_ssot", "contract_version": 1, "operation": tool_name, "outcome": "confirmed", "answer": answer})

@@ -1,8 +1,11 @@
 import asyncio
 import inspect
 import json
+import os
+import re
+import urllib.parse
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Set
 from pydantic import ValidationError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.harness.tools.registry import ToolRegistry
@@ -13,6 +16,79 @@ from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.governance.policy import PolicyEngine
 from agent_platform.harness.governance.audit_ledger import TamperEvidentHashChainLedger
 from agent_platform.harness.guards.pii import PIIMasker
+
+DEFAULT_ALLOWED_EGRESS_HOSTS: Set[str] = {
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "[::1]",
+    "0.0.0.0",
+    "core-api",
+    "retailmind.internal",
+    "cdn.tgdd.vn",
+    "mwg.vn",
+    "thegioididong.com",
+    "dienmayxanh.com",
+}
+
+_URL_PATTERN = re.compile(r"https?://[^\s'\"<>]+", re.IGNORECASE)
+
+
+def is_egress_host_allowed(destination: str, allowed_hosts: Set[str]) -> bool:
+    """Validates if a destination hostname or URL is permitted by the egress allowlist."""
+    if not destination:
+        return True
+    target = destination.strip()
+    if target.startswith(("http://", "https://")):
+        try:
+            parsed = urllib.parse.urlparse(target)
+            host = parsed.hostname or ""
+        except Exception:
+            return False
+    else:
+        host = target.split(":")[0].strip()
+
+    host_lower = host.lower()
+    if not host_lower:
+        return False
+
+    for allowed in allowed_hosts:
+        allowed_lower = allowed.lower()
+        if host_lower == allowed_lower:
+            return True
+        if allowed_lower.startswith("*.") and host_lower.endswith(allowed_lower[1:]):
+            return True
+        if host_lower.endswith("." + allowed_lower):
+            return True
+
+    return False
+
+
+def scan_arguments_for_untrusted_egress(value: Any, allowed_hosts: Set[str]) -> Optional[str]:
+    """Recursively scans tool arguments for URLs or hostnames not on the egress allowlist.
+    Returns the untrusted destination string if a violation is detected, otherwise None.
+    """
+    if isinstance(value, str):
+        urls = _URL_PATTERN.findall(value)
+        for url in urls:
+            if not is_egress_host_allowed(url, allowed_hosts):
+                return url
+        if any(marker in value.lower() for marker in ("webhook.site", "burpcollaborator", "attacker.com", "requestbin", "pastebin.com")):
+            return value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            if k.lower() in ("url", "webhook_url", "callback_url", "target_url", "endpoint", "dest", "destination"):
+                if isinstance(v, str) and not is_egress_host_allowed(v, allowed_hosts):
+                    return v
+            res = scan_arguments_for_untrusted_egress(v, allowed_hosts)
+            if res:
+                return res
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            res = scan_arguments_for_untrusted_egress(item, allowed_hosts)
+            if res:
+                return res
+    return None
 
 class ToolExecutionResult:
     def __init__(
@@ -74,12 +150,19 @@ class ToolExecutor:
         audit_ledger: Optional[TamperEvidentHashChainLedger] = None,
         idempotency_manager: Optional[IdempotencyManager] = None,
         http_client: Any = None,
+        allowed_egress_hosts: Optional[Set[str]] = None,
     ) -> None:
         self.registry = registry
         self.policy_engine = policy_engine
         self.audit_ledger = audit_ledger or TamperEvidentHashChainLedger()
         self.idempotency = idempotency_manager or IdempotencyManager()
         self.http_client = http_client
+        self.allowed_egress_hosts = set(DEFAULT_ALLOWED_EGRESS_HOSTS)
+        if allowed_egress_hosts:
+            self.allowed_egress_hosts.update(allowed_egress_hosts)
+        env_allowlist = os.getenv("RETAILMIND_EGRESS_ALLOWLIST")
+        if env_allowlist:
+            self.allowed_egress_hosts.update(h.strip() for h in env_allowlist.split(",") if h.strip())
 
     async def execute(
         self,
@@ -123,6 +206,25 @@ class ToolExecutor:
                 output=f"Input validation error for tool '{tool_name}': {masked_errors}",
                 is_error=True,
                 error_code="validation_error",
+            )
+
+        # Step 2.5: Egress Network Allowlist Check (VinAI Lethal Trifecta & Exfiltration Defense)
+        untrusted_destination = scan_arguments_for_untrusted_egress(arguments, self.allowed_egress_hosts)
+        if untrusted_destination:
+            self.audit_ledger.record_event(
+                event_id=f"audit_{call_id}",
+                thread_id=thread_id,
+                user_id=principal.user_id,
+                role=principal.role,
+                tenant_id=principal.tenant_id,
+                tool_name=tool_name,
+                input_masked={"destination": PIIMasker.mask_text(str(untrusted_destination))},
+                decision="egress_blocked",
+            )
+            return ToolExecutionResult(
+                output=f"Security error: Egress network access to untrusted destination '{PIIMasker.mask_text(str(untrusted_destination))}' is blocked by egress firewall allowlist.",
+                is_error=True,
+                error_code="egress_blocked",
             )
 
         # Step 3: RBAC Authorization

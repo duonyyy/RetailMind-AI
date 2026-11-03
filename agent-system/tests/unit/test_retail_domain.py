@@ -162,7 +162,7 @@ def test_retail_refund_governance_tiers():
     asyncio.run(_run())
 
 
-def test_retail_knowledge_requires_verified_source():
+def test_retail_knowledge_requires_verified_source(monkeypatch):
     async def _run():
         registry = DomainRegistry("domains")
         pack = registry.get("retail_store")
@@ -177,15 +177,27 @@ def test_retail_knowledge_requires_verified_source():
         executor = ToolExecutor(tool_reg, policy)
 
         principal = Principal(user_id="cust_test", role="customer")
+        # 1. Verified retrieval from 7 MWG markdown policies succeeds with provenance
         res = await executor.execute(
             tool_name="search_knowledge",
             arguments={"query": "chính sách đổi trả 30 ngày bảo hành"},
             principal=principal,
             call_id="call_retrieval_01",
         )
-        assert res.is_error is True
-        assert res.error_code == "unavailable"
-        assert "30 ngày" not in res.output and "24 tháng" not in res.output
+        assert res.is_error is False
+        assert "verified_mwg_policy_corpus" in res.output
+        assert "MWG-POLICY-2026.1" in res.output
+
+        # 2. Fail-closed when policy RAG is unverified or disabled
+        monkeypatch.setenv("RETAILMIND_POLICY_RAG_DISABLED", "true")
+        res_disabled = await executor.execute(
+            tool_name="search_knowledge",
+            arguments={"query": "chính sách đổi trả 30 ngày bảo hành"},
+            principal=principal,
+            call_id="call_retrieval_02",
+        )
+        assert res_disabled.is_error is True
+        assert res_disabled.error_code == "unavailable"
 
     asyncio.run(_run())
 

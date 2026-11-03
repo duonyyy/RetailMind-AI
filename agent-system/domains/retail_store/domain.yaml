@@ -44,6 +44,7 @@ tools:
     - manage_favorite
     - calculate_contract_penalty
     - request_return_or_refund
+    - safe_refund
 
 policies: policies.yaml
 

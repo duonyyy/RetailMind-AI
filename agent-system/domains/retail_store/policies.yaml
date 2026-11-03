@@ -25,6 +25,7 @@ rbac:
       - manage_favorite
       - calculate_contract_penalty
       - request_return_or_refund
+      - safe_refund
   admin:
     allowed_tools: "*"
 
@@ -33,6 +34,18 @@ approval_rules:
     field: amount
     tiers:
       - max: "200000"
+        action: allow
+      - max: "2000000"
+        action: require_approval
+        approver_role: admin
+        timeout_hours: 24
+      - action: deny
+        reason: "Khoản bồi hoàn vượt quá hạn mức tối đa cho phép của cửa hàng (2.000.000 VNĐ). Yêu cầu chuyển hồ sơ sang Phòng Tài chính thẩm định."
+
+  safe_refund_flow:
+    field: amount
+    tiers:
+      - max: "500000"
         action: allow
       - max: "2000000"
         action: require_approval

@@ -289,9 +289,9 @@ class AgentHarness:
         if decision == "approved":
             raise PermissionError("Approval unavailable: complete intent and backend authorization are not available.")
         if current.status != "pending":
-            if current.status == decision and current.decision_by == approver.user_id:
+            if current.status == decision and current.decision_by == approver.user_id and (note or "") == (current.note or ""):
                 return {"approval": current, "resumed_output": None}
-            raise ValueError("Approval request is already resolved.")
+            raise ValueError(f"Approval request is already {current.status}.")
         resolved: ApprovalRequest = await self.approval_store.resolve(
             approval_id=approval_id,
             decision=decision,

@@ -8,6 +8,7 @@ from agent_platform.llm.base import LLMPort, LLMUnavailableError
 from agent_platform.harness.tools.registry import ToolRegistry
 from agent_platform.harness.memory.short_term import ShortTermMemory
 from agent_platform.harness.guards.pii import PIIMasker
+from agent_platform.harness.guards.context_drift import ContextDriftMonitor
 
 if TYPE_CHECKING:
     from agent_platform.harness.state.contracts import AgentState
@@ -66,12 +67,17 @@ class EnterpriseAgent(BaseAgent):
                 "pending_tool_calls": [],
             }
 
-        # 2. Format system prompt with memory context and reflection feedback from Critic
+        # 2. Format system prompt with memory context, reflection feedback from Critic, and drift re-anchoring
         sys_prompt = self.pack.get_system_prompt()
         if mem_ctx := state.get("memory_context"):
             sys_prompt += f"\n\n[BỐI CẢNH BỘ NHỚ DOANH NGHIỆP]:\n{mem_ctx}"
         if feedback := state.get("critic_feedback"):
             sys_prompt += f"\n\n[LƯU Ý TỪ GIÁM SÁT VIÊN Ở CHU KỲ TRƯỚC]: {feedback}"
+
+        # Context Drift & Crescendo Attack Defense (VinAI Track 3 Day 24)
+        drift_detected, drift_reason, drift_reinforcement = ContextDriftMonitor.analyze(messages, step_count=step_count)
+        if drift_detected and drift_reinforcement:
+            sys_prompt += drift_reinforcement
 
         llm_messages: List[Dict[str, Any]] = [{"role": "system", "content": sys_prompt}]
 

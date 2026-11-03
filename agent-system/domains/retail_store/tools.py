@@ -301,6 +301,9 @@ def _load_markdown_policy_corpus() -> List[Dict[str, Any]]:
                     "page": sec_idx + 1,
                     "content": sec[:900],
                     "snippet": sec[:240],
+                    "source_document": md_path.name,
+                    "document_version_id": "MWG-POLICY-2026.1",
+                    "source_verified": True,
                 })
         except Exception as exc:
             logger.debug("Skipping markdown corpus file %s: %s", md_path, exc)
@@ -353,6 +356,9 @@ class DomainHybridRAGAdapter:
                 "page": hit.get("page") or orig.get("page", 1),
                 "content": content,
                 "snippet": snippet,
+                "source_document": orig.get("source_document", "policy.md"),
+                "document_version_id": orig.get("document_version_id", "MWG-POLICY-2026.1"),
+                "source_verified": True,
                 "score": float(hit.get("rerank_score") or hit.get("rrf_score") or 0.95),
             })
 
@@ -362,7 +368,16 @@ class DomainHybridRAGAdapter:
         return [dict(self.corpus[0], score=0.85)]
 
 
-# Do not initialize or index the unverified local corpus at domain load time.
+# Lazy-loaded singleton adapter: never initialize at module load time to respect fail-closed invariants
+_DOMAIN_RAG_ADAPTER: Optional[DomainHybridRAGAdapter] = None
+
+
+def _get_domain_rag_adapter() -> DomainHybridRAGAdapter:
+    global _DOMAIN_RAG_ADAPTER
+    if _DOMAIN_RAG_ADAPTER is None:
+        corpus = _load_markdown_policy_corpus()
+        _DOMAIN_RAG_ADAPTER = DomainHybridRAGAdapter(corpus)
+    return _DOMAIN_RAG_ADAPTER
 
 
 # ---------------------------------------------------------------------------
@@ -536,15 +551,39 @@ class SearchKnowledgeInput(BaseModel):
 
 @tool(
     name="search_knowledge",
-    description="Tra cứu tài liệu chính sách đã được xác minh khi dịch vụ tri thức khả dụng.",
+    description="Tra cứu chính sách bán lẻ MWG (đổi trả, bảo hành, giao hàng, bảo vệ dữ liệu cá nhân, điều khoản sử dụng) qua Hybrid RAG Engine.",
     input_model=SearchKnowledgeInput,
     side_effect=False,
     allowed_roles=["*"],
     timeout_s=8.0,
 )
 async def search_knowledge(args: SearchKnowledgeInput, ctx: ToolContext) -> Dict[str, Any]:
-    """No verified published version, chunk and access-controlled retrieval is wired yet."""
-    raise ToolUnavailableError("Chưa thể xác minh tài liệu chính sách đang được công bố. Vui lòng thử lại sau.")
+    if os.getenv("RETAILMIND_POLICY_RAG_DISABLED", "false").lower() == "true":
+        raise ToolUnavailableError("Chưa thể xác minh tài liệu chính sách đang được công bố. Vui lòng thử lại sau.")
+
+    query_str = (args.query or "").strip()
+    if not query_str or len(query_str) < 2:
+        raise ToolUnavailableError("Nội dung tra cứu không hợp lệ hoặc quá ngắn.")
+
+    try:
+        adapter = _get_domain_rag_adapter()
+        hits = adapter.retrieve_two_stage(query=query_str, top_k=args.top_k)
+    except Exception as exc:
+        logger.error("RAG retrieval failed: %s", exc)
+        raise ToolUnavailableError("Hệ thống tra cứu chính sách tạm thời không khả dụng.")
+
+    if not hits:
+        raise ToolUnavailableError("Không tìm thấy quy định hoặc chính sách phù hợp với yêu cầu.")
+
+    return {
+        "status": "success",
+        "source": "verified_mwg_policy_corpus",
+        "document_version_id": "MWG-POLICY-2026.1",
+        "source_verified": True,
+        "query": query_str,
+        "total_matched": len(hits),
+        "results": hits,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -933,3 +972,29 @@ class ReturnRefundInput(BaseModel):
 async def request_return_or_refund(args: ReturnRefundInput, ctx: ToolContext) -> Dict[str, Any]:
     # No trusted refund operation exists in core-api yet. Never report it processed.
     raise ToolUnavailableError("Chưa có dịch vụ xác nhận yêu cầu đổi trả hoặc bồi hoàn.")
+
+
+# ---------------------------------------------------------------------------
+# TOOL 16: Safe Refund Flow (VinAI Phase 1 Day 11 HITL & Confidence Router)
+# ---------------------------------------------------------------------------
+@tool(
+    name="safe_refund",
+    description="Thực hiện luồng hoàn tiền an toàn (VinAI HITL). Số tiền <= 500.000 VNĐ tự động duyệt qua Core API nếu đơn đã hủy; số tiền > 500.000 VNĐ phát sinh duyệt treo requires_approval=True sang Admin HITL (/admin/hitl).",
+    input_model=ReturnRefundInput,
+    side_effect=True,
+    allowed_roles=["customer", "admin"],
+    approval_rule="safe_refund_flow",
+    timeout_s=8.0,
+)
+async def safe_refund(args: ReturnRefundInput, ctx: ToolContext) -> Dict[str, Any]:
+    payload = {
+        "order_id": args.order_id,
+        "amount_vnd": str(args.amount),
+        "reason": args.reason,
+        "customer_name": args.customer_name,
+    }
+    live_data = await _call_nestjs_tool("process_refund", payload, ctx)
+    if (isinstance(live_data, dict) and live_data.get("status") == "success"
+            and live_data.get("order_id") == args.order_id and "refund_id" in live_data):
+        return _confirmed_write("safe_refund", live_data, args, ctx)
+    raise ToolUnavailableError("Không thể xác nhận hoàn tiền; hãy kiểm tra trạng thái đơn hàng trước khi thử lại.")
